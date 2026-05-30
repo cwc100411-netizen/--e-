@@ -163,3 +163,28 @@ void Stepper_TurnAngle(int32_t Angle)
 {
 	Stepper_TurnAngleX10(Angle * 10);
 }
+
+/**
+  * 函    数：按 0.1 度精度转动
+  * 参    数：AngleX10 要转动的角度，单位为 0.1 度，正数正转，负数反转
+  * 返 回 值：无
+  */
+void Stepper_TurnAngleX10(int32_t AngleX10)
+{
+	uint32_t StepNum;
+	uint32_t AngleAbsX10;
+
+	if (AngleX10 >= 0)
+	{
+		Stepper_SetDir(STEPPER_DIR_CW);
+		AngleAbsX10 = (uint32_t)AngleX10;
+	}
+	else
+	{
+		Stepper_SetDir(STEPPER_DIR_CCW);
+		AngleAbsX10 = (uint32_t)(-AngleX10);
+	}
+
+	StepNum = Stepper_AngleToStepsX10(AngleAbsX10);
+	Stepper_RunSteps(StepNum);
+}
