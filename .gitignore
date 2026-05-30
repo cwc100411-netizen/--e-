@@ -1,0 +1,29 @@
+# Keil uVision build outputs
+Objects/
+Listings/
+*.axf
+*.hex
+*.bin
+*.elf
+*.map
+*.log
+*.o
+*.d
+*.lst
+*.dep
+*.bak
+*.tmp
+
+# Keil workspace/user temp files
+*.uvoptx#
+*.uvprojx#
+*.bak
+
+# Common editor/OS files
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Git metadata
+.git/
