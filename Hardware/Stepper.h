@@ -4,14 +4,14 @@
 #include "stm32f10x.h"
 
 /* 步进电机驱动器引脚配置：默认使用 STEP/DIR/EN 三线驱动器 */
-#define STEPPER_GPIO_RCC              RCC_APB2Periph_GPIOA
-#define STEPPER_GPIO                  GPIOA
-#define STEPPER_STEP_PIN              GPIO_Pin_4
-#define STEPPER_DIR_PIN               GPIO_Pin_5
-#define STEPPER_EN_PIN                GPIO_Pin_6
+#define STEPPER_GPIO_RCC              RCC_APB2Periph_GPIOB
+#define STEPPER_GPIO                  GPIOB
+#define STEPPER_STEP_PIN              GPIO_Pin_6
+#define STEPPER_DIR_PIN               GPIO_Pin_7
+#define STEPPER_EN_PIN                GPIO_Pin_8
 
-/* 常见 A4988/DRV8825/TB6600 的 EN 为低电平使能，如模块相反请改为 Bit_SET */
-#define STEPPER_ENABLE_LEVEL          Bit_RESET
+/* 当前驱动模块按高电平使能处理，如模块相反请改为 Bit_RESET */
+#define STEPPER_ENABLE_LEVEL          Bit_SET
 
 /* 正转方向电平，方向相反时把 Bit_SET 改为 Bit_RESET */
 #define STEPPER_DIR_CW_LEVEL          Bit_SET
