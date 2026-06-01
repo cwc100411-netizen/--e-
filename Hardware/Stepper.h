@@ -42,8 +42,8 @@
 /* 42 步进电机常见步距角为 1.8 度，这里用 0.1 度为单位保存 */
 #define STEPPER_BASE_STEP_ANGLE_X10   18
 
-/* 细分数必须和驱动器拨码或 MS 引脚设置一致 */
-#define STEPPER_DEFAULT_MICROSTEP     1
+/* 默认细分数，必须和驱动器拨码或 MS 引脚设置一致 */
+#define STEPPER_DEFAULT_MICROSTEP     16
 
 /* STEP 高低电平各保持的时间，数值越大转速越慢 */
 #define STEPPER_DEFAULT_PULSE_US      500
