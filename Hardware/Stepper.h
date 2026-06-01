@@ -7,19 +7,29 @@
 #define STEPPER_MOTOR_1               0
 #define STEPPER_MOTOR_2               1
 
-/* 步进电机驱动器引脚配置：默认使用 STEP/DIR/EN 三线驱动器 */
-#define STEPPER_GPIO_RCC              RCC_APB2Periph_GPIOB
-#define STEPPER_GPIO                  GPIOB
+/* 步进电机驱动器引脚配置：默认使用 STEP/DIR/EN 三线驱动器
+   STEP 使用定时器 PWM 输出，DIR 和 EN 仍然使用普通 GPIO 输出 */
+#define STEPPER_STEP_GPIO_RCC         RCC_APB2Periph_GPIOA
+#define STEPPER_STEP_GPIO             GPIOA
+#define STEPPER_DIR_EN_GPIO_RCC       RCC_APB2Periph_GPIOB
+#define STEPPER_DIR_EN_GPIO           GPIOB
 
-/* 电机1引脚：PB6 STEP，PB7 DIR，PB8 EN */
-#define STEPPER1_STEP_PIN             GPIO_Pin_6
+/* 电机1引脚：PA1 STEP(TIM2_CH2)，PB7 DIR，PB8 EN */
+#define STEPPER1_STEP_PIN             GPIO_Pin_1
 #define STEPPER1_DIR_PIN              GPIO_Pin_7
 #define STEPPER1_EN_PIN               GPIO_Pin_8
 
-/* 电机2引脚：PB0 STEP，PB1 DIR，PB3 EN */
-#define STEPPER2_STEP_PIN             GPIO_Pin_0
+/* 电机2引脚：PA7 STEP(TIM3_CH2)，PB1 DIR，PB3 EN */
+#define STEPPER2_STEP_PIN             GPIO_Pin_7
 #define STEPPER2_DIR_PIN              GPIO_Pin_1
 #define STEPPER2_EN_PIN               GPIO_Pin_3
+
+/* STEP PWM 定时器配置：PA1 对应 TIM2_CH2，PA7 对应 TIM3_CH2 */
+#define STEPPER1_PWM_TIM              TIM2
+#define STEPPER2_PWM_TIM              TIM3
+#define STEPPER1_PWM_RCC              RCC_APB1Periph_TIM2
+#define STEPPER2_PWM_RCC              RCC_APB1Periph_TIM3
+#define STEPPER_PWM_TIM_PRESCALER     71
 
 /* 当前驱动模块按高电平使能处理，如模块相反请改为 Bit_RESET */
 #define STEPPER1_ENABLE_LEVEL         Bit_SET

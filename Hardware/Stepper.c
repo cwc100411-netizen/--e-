@@ -1,11 +1,17 @@
 #include "stm32f10x.h"                  // Device header
-#include "Delay.h"
 #include "Stepper.h"
 
 static uint16_t Stepper1_MicroStep = STEPPER_DEFAULT_MICROSTEP;
 static uint16_t Stepper2_MicroStep = STEPPER_DEFAULT_MICROSTEP;
 static uint16_t Stepper1_PulseUs = STEPPER_DEFAULT_PULSE_US;
 static uint16_t Stepper2_PulseUs = STEPPER_DEFAULT_PULSE_US;
+
+static volatile uint32_t Stepper1_TargetStepNum = 0;
+static volatile uint32_t Stepper2_TargetStepNum = 0;
+static volatile uint32_t Stepper1_CurrentStepNum = 0;
+static volatile uint32_t Stepper2_CurrentStepNum = 0;
+static volatile uint8_t Stepper1_Busy = 0;
+static volatile uint8_t Stepper2_Busy = 0;
 
 /**
   * 函    数：取反 BitAction 电平
@@ -25,19 +31,19 @@ static BitAction Stepper_ReverseBit(BitAction BitVal)
 }
 
 /**
-  * 函    数：获取指定电机的 STEP 引脚
+  * 函    数：获取指定电机的 PWM 定时器
   * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：STEP 引脚
+  * 返 回 值：PWM 定时器
   */
-static uint16_t Stepper_GetStepPin(uint8_t Motor)
+static TIM_TypeDef *Stepper_GetPwmTim(uint8_t Motor)
 {
 	if (Motor == STEPPER_MOTOR_2)
 	{
-		return STEPPER2_STEP_PIN;
+		return STEPPER2_PWM_TIM;
 	}
 	else
 	{
-		return STEPPER1_STEP_PIN;
+		return STEPPER1_PWM_TIM;
 	}
 }
 
@@ -144,6 +150,244 @@ static uint16_t Stepper_GetPulseUs(uint8_t Motor)
 }
 
 /**
+  * 函    数：限制 PWM 周期范围
+  * 参    数：PeriodUs PWM 周期，单位 us
+  * 返 回 值：定时器可使用的周期，单位 us
+  */
+static uint16_t Stepper_LimitPeriodUs(uint32_t PeriodUs)
+{
+	if (PeriodUs < 4)
+	{
+		PeriodUs = 4;
+	}
+	if (PeriodUs > 65535)
+	{
+		PeriodUs = 65535;
+	}
+	return (uint16_t)PeriodUs;
+}
+
+/**
+  * 函    数：初始化单个 PWM 定时器
+  * 参    数：TIMx 要初始化的定时器
+  * 返 回 值：无
+  */
+static void Stepper_PWMInitTimer(TIM_TypeDef *TIMx)
+{
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure;
+	TIM_OCInitTypeDef TIM_OCInitStructure;
+
+	/* 定时器 72MHz 分频到 1MHz，计数 1 次就是 1us */
+	TIM_TimeBaseInitStructure.TIM_Prescaler = STEPPER_PWM_TIM_PRESCALER;
+	TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInitStructure.TIM_Period = STEPPER_DEFAULT_PULSE_US * 2 - 1;
+	TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
+	TIM_TimeBaseInit(TIMx, &TIM_TimeBaseInitStructure);
+
+	/* PWM1 模式：计数值小于 CCR2 时输出高电平，其余时间输出低电平 */
+	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+	TIM_OCInitStructure.TIM_OutputNState = TIM_OutputNState_Disable;
+	TIM_OCInitStructure.TIM_Pulse = 0;
+	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+	TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_High;
+	TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Reset;
+	TIM_OCInitStructure.TIM_OCNIdleState = TIM_OCNIdleState_Reset;
+	TIM_OC2Init(TIMx, &TIM_OCInitStructure);
+
+	TIM_ITConfig(TIMx, TIM_IT_Update, DISABLE);
+	TIM_Cmd(TIMx, DISABLE);
+	TIM_ClearITPendingBit(TIMx, TIM_IT_Update);
+}
+
+/**
+  * 函    数：初始化 PWM 中断
+  * 参    数：无
+  * 返 回 值：无
+  */
+static void Stepper_PWMNVICInit(void)
+{
+	NVIC_InitTypeDef NVIC_InitStructure;
+
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+
+	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+	NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+}
+
+/**
+  * 函    数：停止指定电机的 PWM 输出
+  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
+  * 返 回 值：无
+  */
+static void Stepper_StopPwm(uint8_t Motor)
+{
+	TIM_TypeDef *TIMx;
+
+	TIMx = Stepper_GetPwmTim(Motor);
+	TIM_Cmd(TIMx, DISABLE);
+	TIM_ITConfig(TIMx, TIM_IT_Update, DISABLE);
+	TIM_SetCompare2(TIMx, 0);
+	TIM_SetCounter(TIMx, 0);
+	TIM_ClearITPendingBit(TIMx, TIM_IT_Update);
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		Stepper2_Busy = 0;
+		Stepper2_TargetStepNum = 0;
+		Stepper2_CurrentStepNum = 0;
+	}
+	else
+	{
+		Stepper1_Busy = 0;
+		Stepper1_TargetStepNum = 0;
+		Stepper1_CurrentStepNum = 0;
+	}
+}
+
+/**
+  * 函    数：启动指定电机的 PWM 脉冲输出
+  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
+  * 参    数：StepNum 要输出的 STEP 脉冲数量
+  * 参    数：PeriodUs PWM 周期，单位 us
+  * 返 回 值：无
+  */
+static void Stepper_StartPwm(uint8_t Motor, uint32_t StepNum, uint32_t PeriodUs)
+{
+	TIM_TypeDef *TIMx;
+	uint16_t TimerPeriodUs;
+
+	if (StepNum == 0)
+	{
+		return;
+	}
+
+	TIMx = Stepper_GetPwmTim(Motor);
+	TimerPeriodUs = Stepper_LimitPeriodUs(PeriodUs);
+
+	Stepper_StopPwm(Motor);
+
+	TIM_SetAutoreload(TIMx, TimerPeriodUs - 1);
+	TIM_SetCompare2(TIMx, TimerPeriodUs / 2);
+	TIM_SetCounter(TIMx, 0);
+	TIM_GenerateEvent(TIMx, TIM_EventSource_Update);
+	TIM_ClearITPendingBit(TIMx, TIM_IT_Update);
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		Stepper2_TargetStepNum = StepNum;
+		Stepper2_CurrentStepNum = 0;
+		Stepper2_Busy = 1;
+	}
+	else
+	{
+		Stepper1_TargetStepNum = StepNum;
+		Stepper1_CurrentStepNum = 0;
+		Stepper1_Busy = 1;
+	}
+
+	TIM_ITConfig(TIMx, TIM_IT_Update, ENABLE);
+	TIM_Cmd(TIMx, ENABLE);
+}
+
+/**
+  * 函    数：查询指定电机是否正在输出 PWM 脉冲
+  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
+  * 返 回 值：1 表示忙，0 表示空闲
+  */
+static uint8_t Stepper_IsBusy(uint8_t Motor)
+{
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		return Stepper2_Busy;
+	}
+	else
+	{
+		return Stepper1_Busy;
+	}
+}
+
+/**
+  * 函    数：等待指定电机 PWM 输出完成
+  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
+  * 返 回 值：无
+  */
+static void Stepper_WaitPwmFinish(uint8_t Motor)
+{
+	while (Stepper_IsBusy(Motor))
+	{
+	}
+}
+
+/**
+  * 函    数：等待两个电机 PWM 输出完成
+  * 参    数：无
+  * 返 回 值：无
+  */
+static void Stepper_WaitBothPwmFinish(void)
+{
+	while (Stepper1_Busy || Stepper2_Busy)
+	{
+	}
+}
+
+/**
+  * 函    数：TIM2 中断函数，用于统计电机1 PWM 脉冲数量
+  * 参    数：无
+  * 返 回 值：无
+  * 注意事项：中断中只计数和停止 PWM，不写阻塞延时
+  */
+void TIM2_IRQHandler(void)
+{
+	if (TIM_GetITStatus(STEPPER1_PWM_TIM, TIM_IT_Update) == SET)
+	{
+		TIM_ClearITPendingBit(STEPPER1_PWM_TIM, TIM_IT_Update);
+
+		if (Stepper1_Busy)
+		{
+			Stepper1_CurrentStepNum ++;
+			if (Stepper1_CurrentStepNum >= Stepper1_TargetStepNum)
+			{
+				Stepper_StopPwm(STEPPER_MOTOR_1);
+			}
+		}
+	}
+}
+
+/**
+  * 函    数：TIM3 中断函数，用于统计电机2 PWM 脉冲数量
+  * 参    数：无
+  * 返 回 值：无
+  * 注意事项：中断中只计数和停止 PWM，不写阻塞延时
+  */
+void TIM3_IRQHandler(void)
+{
+	if (TIM_GetITStatus(STEPPER2_PWM_TIM, TIM_IT_Update) == SET)
+	{
+		TIM_ClearITPendingBit(STEPPER2_PWM_TIM, TIM_IT_Update);
+
+		if (Stepper2_Busy)
+		{
+			Stepper2_CurrentStepNum ++;
+			if (Stepper2_CurrentStepNum >= Stepper2_TargetStepNum)
+			{
+				Stepper_StopPwm(STEPPER_MOTOR_2);
+			}
+		}
+	}
+}
+
+/**
   * 函    数：步进电机模块初始化
   * 参    数：无
   * 返 回 值：无
@@ -152,18 +396,29 @@ void Stepper_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-	/* 开启 GPIO 和 AFIO 时钟，PB3 默认是 JTAG 引脚，需要关闭 JTAG 后才能作为普通 GPIO 使用 */
-	RCC_APB2PeriphClockCmd(STEPPER_GPIO_RCC | RCC_APB2Periph_AFIO, ENABLE);
+	/* 开启 GPIO、AFIO 和 PWM 定时器时钟，PB3 默认是 JTAG 引脚，需要关闭 JTAG 后才能作为普通 GPIO 使用 */
+	RCC_APB2PeriphClockCmd(STEPPER_STEP_GPIO_RCC | STEPPER_DIR_EN_GPIO_RCC | RCC_APB2Periph_AFIO, ENABLE);
+	RCC_APB1PeriphClockCmd(STEPPER1_PWM_RCC | STEPPER2_PWM_RCC, ENABLE);
 	GPIO_PinRemapConfig(GPIO_Remap_SWJ_JTAGDisable, ENABLE);
 
-	/* STEP、DIR、EN 引脚配置为推挽输出 */
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_InitStructure.GPIO_Pin = STEPPER1_STEP_PIN | STEPPER1_DIR_PIN | STEPPER1_EN_PIN |
-	                              STEPPER2_STEP_PIN | STEPPER2_DIR_PIN | STEPPER2_EN_PIN;
+	/* STEP 引脚配置为复用推挽输出，由 TIM2_CH2 和 TIM3_CH2 输出 PWM 脉冲 */
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+	GPIO_InitStructure.GPIO_Pin = STEPPER1_STEP_PIN | STEPPER2_STEP_PIN;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(STEPPER_GPIO, &GPIO_InitStructure);
+	GPIO_Init(STEPPER_STEP_GPIO, &GPIO_InitStructure);
 
-	GPIO_ResetBits(STEPPER_GPIO, STEPPER1_STEP_PIN | STEPPER2_STEP_PIN);
+	/* DIR、EN 引脚配置为普通推挽输出 */
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Pin = STEPPER1_DIR_PIN | STEPPER1_EN_PIN |
+	                              STEPPER2_DIR_PIN | STEPPER2_EN_PIN;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(STEPPER_DIR_EN_GPIO, &GPIO_InitStructure);
+
+	Stepper_PWMInitTimer(STEPPER1_PWM_TIM);
+	Stepper_PWMInitTimer(STEPPER2_PWM_TIM);
+	Stepper_PWMNVICInit();
+
+	GPIO_ResetBits(STEPPER_STEP_GPIO, STEPPER1_STEP_PIN | STEPPER2_STEP_PIN);
 	Stepper_SetDir(STEPPER_MOTOR_1, STEPPER_DIR_CW);
 	Stepper_SetDir(STEPPER_MOTOR_2, STEPPER_DIR_CW);
 	Stepper_Enable(STEPPER_MOTOR_1);
@@ -177,7 +432,7 @@ void Stepper_Init(void)
   */
 void Stepper_Enable(uint8_t Motor)
 {
-	GPIO_WriteBit(STEPPER_GPIO, Stepper_GetEnPin(Motor), Stepper_GetEnableLevel(Motor));
+	GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetEnPin(Motor), Stepper_GetEnableLevel(Motor));
 }
 
 /**
@@ -187,7 +442,7 @@ void Stepper_Enable(uint8_t Motor)
   */
 void Stepper_Disable(uint8_t Motor)
 {
-	GPIO_WriteBit(STEPPER_GPIO, Stepper_GetEnPin(Motor), Stepper_ReverseBit(Stepper_GetEnableLevel(Motor)));
+	GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetEnPin(Motor), Stepper_ReverseBit(Stepper_GetEnableLevel(Motor)));
 }
 
 /**
@@ -200,11 +455,11 @@ void Stepper_SetDir(uint8_t Motor, uint8_t Dir)
 {
 	if (Dir == STEPPER_DIR_CW)
 	{
-		GPIO_WriteBit(STEPPER_GPIO, Stepper_GetDirPin(Motor), Stepper_GetDirCwLevel(Motor));
+		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetDirPin(Motor), Stepper_GetDirCwLevel(Motor));
 	}
 	else
 	{
-		GPIO_WriteBit(STEPPER_GPIO, Stepper_GetDirPin(Motor), Stepper_ReverseBit(Stepper_GetDirCwLevel(Motor)));
+		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetDirPin(Motor), Stepper_ReverseBit(Stepper_GetDirCwLevel(Motor)));
 	}
 }
 
@@ -256,44 +511,6 @@ void Stepper_SetPulseUs(uint8_t Motor, uint16_t PulseUs)
 }
 
 /**
-  * 函    数：输出一个 STEP 脉冲
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：无
-  */
-static void Stepper_Pulse(uint8_t Motor)
-{
-	uint16_t StepPin;
-	uint16_t PulseUs;
-
-	StepPin = Stepper_GetStepPin(Motor);
-	PulseUs = Stepper_GetPulseUs(Motor);
-
-	GPIO_SetBits(STEPPER_GPIO, StepPin);
-	Delay_us(PulseUs);
-	GPIO_ResetBits(STEPPER_GPIO, StepPin);
-	Delay_us(PulseUs);
-}
-
-/**
-  * 函    数：同时输出一组 STEP 脉冲
-  * 参    数：StepPinMask 需要输出脉冲的 STEP 引脚组合
-  * 参    数：PulseUs STEP 高低电平各保持的时间，单位 us
-  * 返 回 值：无
-  */
-static void Stepper_PulsePins(uint16_t StepPinMask, uint16_t PulseUs)
-{
-	if (StepPinMask == 0)
-	{
-		return;
-	}
-
-	GPIO_SetBits(STEPPER_GPIO, StepPinMask);
-	Delay_us(PulseUs);
-	GPIO_ResetBits(STEPPER_GPIO, StepPinMask);
-	Delay_us(PulseUs);
-}
-
-/**
   * 函    数：按指定步数转动
   * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
   * 参    数：StepNum 要输出的 STEP 脉冲数量
@@ -301,12 +518,12 @@ static void Stepper_PulsePins(uint16_t StepPinMask, uint16_t PulseUs)
   */
 void Stepper_RunSteps(uint8_t Motor, uint32_t StepNum)
 {
-	uint32_t i;
+	uint32_t PeriodUs;
 
-	for (i = 0; i < StepNum; i ++)
-	{
-		Stepper_Pulse(Motor);
-	}
+	/* PulseUs 表示高低电平各保持的时间，所以一个 PWM 周期为 2 * PulseUs */
+	PeriodUs = (uint32_t)Stepper_GetPulseUs(Motor) * 2;
+	Stepper_StartPwm(Motor, StepNum, PeriodUs);
+	Stepper_WaitPwmFinish(Motor);
 }
 
 /**
@@ -317,11 +534,10 @@ void Stepper_RunSteps(uint8_t Motor, uint32_t StepNum)
   */
 void Stepper_RunStepsBoth(uint32_t Motor1StepNum, uint32_t Motor2StepNum)
 {
-	uint32_t i;
 	uint32_t MaxStepNum;
-	uint32_t Motor1Count = 0;
-	uint32_t Motor2Count = 0;
-	uint16_t StepPinMask;
+	uint32_t BasePeriodUs;
+	uint32_t Motor1PeriodUs;
+	uint32_t Motor2PeriodUs;
 	uint16_t PulseUs;
 
 	if (Motor1StepNum > Motor2StepNum)
@@ -338,7 +554,7 @@ void Stepper_RunStepsBoth(uint32_t Motor1StepNum, uint32_t Motor2StepNum)
 		return;
 	}
 
-	/* 同时运行时使用较慢的脉冲时间，保证两个驱动器都能可靠识别 STEP */
+	/* 同时运行时使用较慢的基础速度，保证两个驱动器都能可靠识别 STEP */
 	if (Stepper1_PulseUs > Stepper2_PulseUs)
 	{
 		PulseUs = Stepper1_PulseUs;
@@ -348,26 +564,24 @@ void Stepper_RunStepsBoth(uint32_t Motor1StepNum, uint32_t Motor2StepNum)
 		PulseUs = Stepper2_PulseUs;
 	}
 
-	for (i = 0; i < MaxStepNum; i ++)
+	BasePeriodUs = (uint32_t)PulseUs * 2;
+	Motor1PeriodUs = BasePeriodUs;
+	Motor2PeriodUs = BasePeriodUs;
+
+	/* 两个电机步数不同时，少步数电机降低 PWM 频率，尽量让两个电机同时结束 */
+	if (Motor1StepNum != 0)
 	{
-		StepPinMask = 0;
-
-		Motor1Count += Motor1StepNum;
-		if (Motor1Count >= MaxStepNum)
-		{
-			Motor1Count -= MaxStepNum;
-			StepPinMask |= STEPPER1_STEP_PIN;
-		}
-
-		Motor2Count += Motor2StepNum;
-		if (Motor2Count >= MaxStepNum)
-		{
-			Motor2Count -= MaxStepNum;
-			StepPinMask |= STEPPER2_STEP_PIN;
-		}
-
-		Stepper_PulsePins(StepPinMask, PulseUs);
+		Motor1PeriodUs = (uint32_t)(((uint64_t)BasePeriodUs * MaxStepNum + Motor1StepNum / 2) / Motor1StepNum);
+		Stepper_StartPwm(STEPPER_MOTOR_1, Motor1StepNum, Motor1PeriodUs);
 	}
+
+	if (Motor2StepNum != 0)
+	{
+		Motor2PeriodUs = (uint32_t)(((uint64_t)BasePeriodUs * MaxStepNum + Motor2StepNum / 2) / Motor2StepNum);
+		Stepper_StartPwm(STEPPER_MOTOR_2, Motor2StepNum, Motor2PeriodUs);
+	}
+
+	Stepper_WaitBothPwmFinish();
 }
 
 /**
