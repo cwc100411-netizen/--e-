@@ -43,10 +43,13 @@
 #define STEPPER_BASE_STEP_ANGLE_X10   18
 
 /* 默认细分数，必须和驱动器拨码或 MS 引脚设置一致 */
-#define STEPPER_DEFAULT_MICROSTEP     16
+#define STEPPER_DEFAULT_MICROSTEP     32
 
 /* STEP 高低电平各保持的时间，数值越大转速越慢 */
 #define STEPPER_DEFAULT_PULSE_US      500
+
+/* DIR 方向信号建立时间，方向切换后等待一小段时间再发送 STEP 脉冲 */
+#define STEPPER_DIR_SETUP_DELAY_US    10
 
 #define STEPPER_DIR_CW                0
 #define STEPPER_DIR_CCW               1

@@ -1,5 +1,6 @@
 #include "stm32f10x.h"                  // Device header
 #include "Stepper.h"
+#include "Delay.h"
 
 static uint16_t Stepper1_MicroStep = STEPPER_DEFAULT_MICROSTEP;
 static uint16_t Stepper2_MicroStep = STEPPER_DEFAULT_MICROSTEP;
@@ -12,142 +13,6 @@ static volatile uint32_t Stepper1_CurrentStepNum = 0;
 static volatile uint32_t Stepper2_CurrentStepNum = 0;
 static volatile uint8_t Stepper1_Busy = 0;
 static volatile uint8_t Stepper2_Busy = 0;
-
-/**
-  * 函    数：取反 BitAction 电平
-  * 参    数：BitVal 要取反的电平
-  * 返 回 值：取反后的电平
-  */
-static BitAction Stepper_ReverseBit(BitAction BitVal)
-{
-	if (BitVal == Bit_SET)
-	{
-		return Bit_RESET;
-	}
-	else
-	{
-		return Bit_SET;
-	}
-}
-
-/**
-  * 函    数：获取指定电机的 PWM 定时器
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：PWM 定时器
-  */
-static TIM_TypeDef *Stepper_GetPwmTim(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return STEPPER2_PWM_TIM;
-	}
-	else
-	{
-		return STEPPER1_PWM_TIM;
-	}
-}
-
-/**
-  * 函    数：获取指定电机的 DIR 引脚
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：DIR 引脚
-  */
-static uint16_t Stepper_GetDirPin(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return STEPPER2_DIR_PIN;
-	}
-	else
-	{
-		return STEPPER1_DIR_PIN;
-	}
-}
-
-/**
-  * 函    数：获取指定电机的 EN 引脚
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：EN 引脚
-  */
-static uint16_t Stepper_GetEnPin(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return STEPPER2_EN_PIN;
-	}
-	else
-	{
-		return STEPPER1_EN_PIN;
-	}
-}
-
-/**
-  * 函    数：获取指定电机的使能有效电平
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：使能有效电平
-  */
-static BitAction Stepper_GetEnableLevel(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return STEPPER2_ENABLE_LEVEL;
-	}
-	else
-	{
-		return STEPPER1_ENABLE_LEVEL;
-	}
-}
-
-/**
-  * 函    数：获取指定电机的正转方向电平
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：正转方向电平
-  */
-static BitAction Stepper_GetDirCwLevel(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return STEPPER2_DIR_CW_LEVEL;
-	}
-	else
-	{
-		return STEPPER1_DIR_CW_LEVEL;
-	}
-}
-
-/**
-  * 函    数：获取指定电机的细分数
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：细分数
-  */
-static uint16_t Stepper_GetMicroStep(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return Stepper2_MicroStep;
-	}
-	else
-	{
-		return Stepper1_MicroStep;
-	}
-}
-
-/**
-  * 函    数：获取指定电机的 STEP 脉冲时间
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：STEP 高低电平各保持的时间，单位 us
-  */
-static uint16_t Stepper_GetPulseUs(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return Stepper2_PulseUs;
-	}
-	else
-	{
-		return Stepper1_PulseUs;
-	}
-}
 
 /**
   * 函    数：限制 PWM 周期范围
@@ -202,30 +67,6 @@ static void Stepper_PWMInitTimer(TIM_TypeDef *TIMx)
 }
 
 /**
-  * 函    数：初始化 PWM 中断
-  * 参    数：无
-  * 返 回 值：无
-  */
-static void Stepper_PWMNVICInit(void)
-{
-	NVIC_InitTypeDef NVIC_InitStructure;
-
-	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
-
-	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
-	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_Init(&NVIC_InitStructure);
-
-	NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
-	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_Init(&NVIC_InitStructure);
-}
-
-/**
   * 函    数：停止指定电机的 PWM 输出
   * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
   * 返 回 值：无
@@ -234,7 +75,15 @@ static void Stepper_StopPwm(uint8_t Motor)
 {
 	TIM_TypeDef *TIMx;
 
-	TIMx = Stepper_GetPwmTim(Motor);
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		TIMx = STEPPER2_PWM_TIM;
+	}
+	else
+	{
+		TIMx = STEPPER1_PWM_TIM;
+	}
+
 	TIM_Cmd(TIMx, DISABLE);
 	TIM_ITConfig(TIMx, TIM_IT_Update, DISABLE);
 	TIM_SetCompare2(TIMx, 0);
@@ -272,7 +121,15 @@ static void Stepper_StartPwm(uint8_t Motor, uint32_t StepNum, uint32_t PeriodUs)
 		return;
 	}
 
-	TIMx = Stepper_GetPwmTim(Motor);
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		TIMx = STEPPER2_PWM_TIM;
+	}
+	else
+	{
+		TIMx = STEPPER1_PWM_TIM;
+	}
+
 	TimerPeriodUs = Stepper_LimitPeriodUs(PeriodUs);
 
 	Stepper_StopPwm(Motor);
@@ -280,7 +137,7 @@ static void Stepper_StartPwm(uint8_t Motor, uint32_t StepNum, uint32_t PeriodUs)
 	TIM_SetAutoreload(TIMx, TimerPeriodUs - 1);
 	TIM_SetCompare2(TIMx, TimerPeriodUs / 2);
 	TIM_SetCounter(TIMx, 0);
-	TIM_GenerateEvent(TIMx, TIM_EventSource_Update);
+	/* ARR 和 CCR2 未开启预装载，直接写入即可；不主动产生更新事件，避免影响步数统计 */
 	TIM_ClearITPendingBit(TIMx, TIM_IT_Update);
 
 	if (Motor == STEPPER_MOTOR_2)
@@ -298,47 +155,6 @@ static void Stepper_StartPwm(uint8_t Motor, uint32_t StepNum, uint32_t PeriodUs)
 
 	TIM_ITConfig(TIMx, TIM_IT_Update, ENABLE);
 	TIM_Cmd(TIMx, ENABLE);
-}
-
-/**
-  * 函    数：查询指定电机是否正在输出 PWM 脉冲
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：1 表示忙，0 表示空闲
-  */
-static uint8_t Stepper_IsBusy(uint8_t Motor)
-{
-	if (Motor == STEPPER_MOTOR_2)
-	{
-		return Stepper2_Busy;
-	}
-	else
-	{
-		return Stepper1_Busy;
-	}
-}
-
-/**
-  * 函    数：等待指定电机 PWM 输出完成
-  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
-  * 返 回 值：无
-  */
-static void Stepper_WaitPwmFinish(uint8_t Motor)
-{
-	while (Stepper_IsBusy(Motor))
-	{
-	}
-}
-
-/**
-  * 函    数：等待两个电机 PWM 输出完成
-  * 参    数：无
-  * 返 回 值：无
-  */
-static void Stepper_WaitBothPwmFinish(void)
-{
-	while (Stepper1_Busy || Stepper2_Busy)
-	{
-	}
 }
 
 /**
@@ -395,6 +211,7 @@ void TIM3_IRQHandler(void)
 void Stepper_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
+	NVIC_InitTypeDef NVIC_InitStructure;
 
 	/* 开启 GPIO、AFIO 和 PWM 定时器时钟，PB3 默认是 JTAG 引脚，需要关闭 JTAG 后才能作为普通 GPIO 使用 */
 	RCC_APB2PeriphClockCmd(STEPPER_STEP_GPIO_RCC | STEPPER_DIR_EN_GPIO_RCC | RCC_APB2Periph_AFIO, ENABLE);
@@ -416,7 +233,20 @@ void Stepper_Init(void)
 
 	Stepper_PWMInitTimer(STEPPER1_PWM_TIM);
 	Stepper_PWMInitTimer(STEPPER2_PWM_TIM);
-	Stepper_PWMNVICInit();
+
+	/* TIM2 和 TIM3 中断只负责统计 STEP 脉冲数，到达目标步数后停止 PWM */
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+	NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
 
 	/* 默认细分和速度统一放在初始化中，main.c 不需要重复设置 */
 	Stepper_SetMicroStep(STEPPER_MOTOR_1, STEPPER_DEFAULT_MICROSTEP);
@@ -438,7 +268,14 @@ void Stepper_Init(void)
   */
 void Stepper_Enable(uint8_t Motor)
 {
-	GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetEnPin(Motor), Stepper_GetEnableLevel(Motor));
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, STEPPER2_EN_PIN, STEPPER2_ENABLE_LEVEL);
+	}
+	else
+	{
+		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, STEPPER1_EN_PIN, STEPPER1_ENABLE_LEVEL);
+	}
 }
 
 /**
@@ -448,7 +285,16 @@ void Stepper_Enable(uint8_t Motor)
   */
 void Stepper_Disable(uint8_t Motor)
 {
-	GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetEnPin(Motor), Stepper_ReverseBit(Stepper_GetEnableLevel(Motor)));
+	Stepper_StopPwm(Motor);
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, STEPPER2_EN_PIN, (STEPPER2_ENABLE_LEVEL == Bit_SET) ? Bit_RESET : Bit_SET);
+	}
+	else
+	{
+		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, STEPPER1_EN_PIN, (STEPPER1_ENABLE_LEVEL == Bit_SET) ? Bit_RESET : Bit_SET);
+	}
 }
 
 /**
@@ -459,14 +305,29 @@ void Stepper_Disable(uint8_t Motor)
   */
 void Stepper_SetDir(uint8_t Motor, uint8_t Dir)
 {
-	if (Dir == STEPPER_DIR_CW)
+	uint16_t DirPin;
+	BitAction DirLevel;
+
+	if (Motor == STEPPER_MOTOR_2)
 	{
-		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetDirPin(Motor), Stepper_GetDirCwLevel(Motor));
+		DirPin = STEPPER2_DIR_PIN;
+		DirLevel = STEPPER2_DIR_CW_LEVEL;
 	}
 	else
 	{
-		GPIO_WriteBit(STEPPER_DIR_EN_GPIO, Stepper_GetDirPin(Motor), Stepper_ReverseBit(Stepper_GetDirCwLevel(Motor)));
+		DirPin = STEPPER1_DIR_PIN;
+		DirLevel = STEPPER1_DIR_CW_LEVEL;
 	}
+
+	if (Dir != STEPPER_DIR_CW)
+	{
+		DirLevel = (DirLevel == Bit_SET) ? Bit_RESET : Bit_SET;
+	}
+
+	GPIO_WriteBit(STEPPER_DIR_EN_GPIO, DirPin, DirLevel);
+
+	/* 方向电平改变后等待一小段时间，再输出 STEP 脉冲 */
+	Delay_us(STEPPER_DIR_SETUP_DELAY_US);
 }
 
 /**
@@ -525,11 +386,38 @@ void Stepper_SetPulseUs(uint8_t Motor, uint16_t PulseUs)
 void Stepper_RunSteps(uint8_t Motor, uint32_t StepNum)
 {
 	uint32_t PeriodUs;
+	uint16_t PulseUs;
+
+	if (StepNum == 0)
+	{
+		return;
+	}
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		PulseUs = Stepper2_PulseUs;
+	}
+	else
+	{
+		PulseUs = Stepper1_PulseUs;
+	}
 
 	/* PulseUs 表示高低电平各保持的时间，所以一个 PWM 周期为 2 * PulseUs */
-	PeriodUs = (uint32_t)Stepper_GetPulseUs(Motor) * 2;
+	PeriodUs = (uint32_t)PulseUs * 2;
 	Stepper_StartPwm(Motor, StepNum, PeriodUs);
-	Stepper_WaitPwmFinish(Motor);
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		while (Stepper2_Busy)
+		{
+		}
+	}
+	else
+	{
+		while (Stepper1_Busy)
+		{
+		}
+	}
 }
 
 /**
@@ -587,7 +475,9 @@ void Stepper_RunStepsBoth(uint32_t Motor1StepNum, uint32_t Motor2StepNum)
 		Stepper_StartPwm(STEPPER_MOTOR_2, Motor2StepNum, Motor2PeriodUs);
 	}
 
-	Stepper_WaitBothPwmFinish();
+	while (Stepper1_Busy || Stepper2_Busy)
+	{
+	}
 }
 
 /**
@@ -598,9 +488,19 @@ void Stepper_RunStepsBoth(uint32_t Motor1StepNum, uint32_t Motor2StepNum)
   */
 uint32_t Stepper_AngleToStepsX10(uint8_t Motor, uint32_t AngleX10)
 {
+	uint16_t MicroStep;
 	uint32_t StepNum;
 
-	StepNum = (AngleX10 * Stepper_GetMicroStep(Motor) + STEPPER_BASE_STEP_ANGLE_X10 / 2) / STEPPER_BASE_STEP_ANGLE_X10;
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		MicroStep = Stepper2_MicroStep;
+	}
+	else
+	{
+		MicroStep = Stepper1_MicroStep;
+	}
+
+	StepNum = (uint32_t)(((uint64_t)AngleX10 * MicroStep + STEPPER_BASE_STEP_ANGLE_X10 / 2) / STEPPER_BASE_STEP_ANGLE_X10);
 	return StepNum;
 }
 
@@ -612,7 +512,23 @@ uint32_t Stepper_AngleToStepsX10(uint8_t Motor, uint32_t AngleX10)
   */
 void Stepper_TurnAngle(uint8_t Motor, int32_t Angle)
 {
-	Stepper_TurnAngleX10(Motor, Angle * 10);
+	int32_t AngleX10;
+
+	/* 防止极端大角度执行 Angle * 10 时发生有符号溢出 */
+	if (Angle > 214748364)
+	{
+		AngleX10 = 2147483640L;
+	}
+	else if (Angle < -214748364)
+	{
+		AngleX10 = -2147483640L;
+	}
+	else
+	{
+		AngleX10 = Angle * 10;
+	}
+
+	Stepper_TurnAngleX10(Motor, AngleX10);
 }
 
 /**
@@ -626,7 +542,12 @@ void Stepper_TurnAngleX10(uint8_t Motor, int32_t AngleX10)
 	uint32_t StepNum;
 	uint32_t AngleAbsX10;
 
-	if (AngleX10 >= 0)
+	if (AngleX10 == 0)
+	{
+		return;
+	}
+
+	if (AngleX10 > 0)
 	{
 		Stepper_SetDir(Motor, STEPPER_DIR_CW);
 		AngleAbsX10 = (uint32_t)AngleX10;
@@ -634,7 +555,7 @@ void Stepper_TurnAngleX10(uint8_t Motor, int32_t AngleX10)
 	else
 	{
 		Stepper_SetDir(Motor, STEPPER_DIR_CCW);
-		AngleAbsX10 = (uint32_t)(-AngleX10);
+		AngleAbsX10 = 0 - (uint32_t)AngleX10;
 	}
 
 	StepNum = Stepper_AngleToStepsX10(Motor, AngleAbsX10);
@@ -651,29 +572,29 @@ void Stepper_TurnAngleBoth(int32_t Motor1Angle, int32_t Motor2Angle)
 {
 	uint32_t Motor1StepNum;
 	uint32_t Motor2StepNum;
-	uint32_t Motor1AngleAbsX10;
-	uint32_t Motor2AngleAbsX10;
+	uint32_t Motor1AngleAbsX10 = 0;
+	uint32_t Motor2AngleAbsX10 = 0;
 
-	if (Motor1Angle >= 0)
+	if (Motor1Angle > 0)
 	{
 		Stepper_SetDir(STEPPER_MOTOR_1, STEPPER_DIR_CW);
-		Motor1AngleAbsX10 = (uint32_t)(Motor1Angle * 10);
+		Motor1AngleAbsX10 = (uint32_t)((uint64_t)Motor1Angle * 10);
 	}
-	else
+	else if (Motor1Angle < 0)
 	{
 		Stepper_SetDir(STEPPER_MOTOR_1, STEPPER_DIR_CCW);
-		Motor1AngleAbsX10 = (uint32_t)(-Motor1Angle * 10);
+		Motor1AngleAbsX10 = (uint32_t)((uint64_t)(0 - (uint32_t)Motor1Angle) * 10);
 	}
 
-	if (Motor2Angle >= 0)
+	if (Motor2Angle > 0)
 	{
 		Stepper_SetDir(STEPPER_MOTOR_2, STEPPER_DIR_CW);
-		Motor2AngleAbsX10 = (uint32_t)(Motor2Angle * 10);
+		Motor2AngleAbsX10 = (uint32_t)((uint64_t)Motor2Angle * 10);
 	}
-	else
+	else if (Motor2Angle < 0)
 	{
 		Stepper_SetDir(STEPPER_MOTOR_2, STEPPER_DIR_CCW);
-		Motor2AngleAbsX10 = (uint32_t)(-Motor2Angle * 10);
+		Motor2AngleAbsX10 = (uint32_t)((uint64_t)(0 - (uint32_t)Motor2Angle) * 10);
 	}
 
 	Motor1StepNum = Stepper_AngleToStepsX10(STEPPER_MOTOR_1, Motor1AngleAbsX10);
