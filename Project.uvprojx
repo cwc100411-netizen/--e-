@@ -369,7 +369,7 @@
               <MiscControls>--no-multibyte-chars</MiscControls>
               <Define>USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>.\Start;.\Library;.\User;.\System;.\Hardware</IncludePath>
+              <IncludePath>.\Start;.\Library;.\User;.\System;.\Hardware;.\Hardware\tracking</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -751,6 +751,16 @@
               <FileName>Stepper.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\Hardware\Stepper.h</FilePath>
+            </File>
+            <File>
+              <FileName>Tracking.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\tracking\Tracking.c</FilePath>
+            </File>
+            <File>
+              <FileName>Tracking.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\tracking\Tracking.h</FilePath>
             </File>
           </Files>
         </Group>

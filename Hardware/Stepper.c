@@ -158,6 +158,40 @@ static void Stepper_StartPwm(uint8_t Motor, uint32_t StepNum, uint32_t PeriodUs)
 }
 
 /**
+  * 函    数：按指定周期连续输出 STEP PWM
+  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
+  * 参    数：PeriodUs PWM 周期，单位 us
+  * 返 回 值：无
+  * 说    明：追踪闭环使用速度控制，不统计固定步数，直到主动停止
+  */
+static void Stepper_StartContinuousPwm(uint8_t Motor, uint32_t PeriodUs)
+{
+	TIM_TypeDef *TIMx;
+	uint16_t TimerPeriodUs;
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		TIMx = STEPPER2_PWM_TIM;
+	}
+	else
+	{
+		TIMx = STEPPER1_PWM_TIM;
+	}
+
+	TimerPeriodUs = Stepper_LimitPeriodUs(PeriodUs);
+
+	Stepper_StopPwm(Motor);
+
+	TIM_SetAutoreload(TIMx, TimerPeriodUs - 1);
+	TIM_SetCompare2(TIMx, TimerPeriodUs / 2);
+	TIM_SetCounter(TIMx, 0);
+	TIM_ClearITPendingBit(TIMx, TIM_IT_Update);
+
+	TIM_ITConfig(TIMx, TIM_IT_Update, DISABLE);
+	TIM_Cmd(TIMx, ENABLE);
+}
+
+/**
   * 函    数：TIM2 中断函数，用于统计电机1 PWM 脉冲数量
   * 参    数：无
   * 返 回 值：无
@@ -375,6 +409,70 @@ void Stepper_SetPulseUs(uint8_t Motor, uint16_t PulseUs)
 	{
 		Stepper1_PulseUs = PulseUs;
 	}
+}
+
+/**
+  * 函    数：停止指定电机 STEP PWM 输出
+  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
+  * 返 回 值：无
+  */
+void Stepper_Stop(uint8_t Motor)
+{
+	Stepper_StopPwm(Motor);
+}
+
+/**
+  * 函    数：同时停止两个电机 STEP PWM 输出
+  * 参    数：无
+  * 返 回 值：无
+  */
+void Stepper_StopBoth(void)
+{
+	Stepper_StopPwm(STEPPER_MOTOR_1);
+	Stepper_StopPwm(STEPPER_MOTOR_2);
+}
+
+/**
+  * 函    数：按速度连续驱动指定电机
+  * 参    数：Motor 电机编号，STEPPER_MOTOR_1 或 STEPPER_MOTOR_2
+  * 参    数：Speed 速度，单位 step/s，正数正转，负数反转，0 停止
+  * 返 回 值：无
+  * 说    明：该函数不阻塞，适合 PID 根据误差持续调整电机速度
+  */
+void Stepper_SetSpeed(uint8_t Motor, int16_t Speed)
+{
+	uint32_t SpeedAbs;
+	uint32_t PeriodUs;
+
+	if (Speed == 0)
+	{
+		Stepper_StopPwm(Motor);
+		return;
+	}
+
+	/* 改变方向前先停止 STEP，避免方向建立时间内继续输出脉冲 */
+	Stepper_StopPwm(Motor);
+
+	if (Speed > 0)
+	{
+		Stepper_SetDir(Motor, STEPPER_DIR_CW);
+		SpeedAbs = (uint32_t)Speed;
+	}
+	else
+	{
+		Stepper_SetDir(Motor, STEPPER_DIR_CCW);
+		SpeedAbs = (uint32_t)(0 - Speed);
+	}
+
+	if (SpeedAbs == 0)
+	{
+		Stepper_StopPwm(Motor);
+		return;
+	}
+
+	PeriodUs = (1000000UL + SpeedAbs / 2) / SpeedAbs;
+	Stepper_Enable(Motor);
+	Stepper_StartContinuousPwm(Motor, PeriodUs);
 }
 
 /**
