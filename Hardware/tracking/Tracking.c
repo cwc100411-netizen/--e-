@@ -7,9 +7,9 @@
 #define TRACKING_DEFAULT_TARGET_X     120
 #define TRACKING_DEFAULT_TARGET_Y     120
 
-#define TRACKING_DEAD_ZONE_PIXEL      3
-#define TRACKING_MIN_SPEED            80
-#define TRACKING_MAX_SPEED            800
+#define TRACKING_DEAD_ZONE_PIXEL       2
+#define TRACKING_MIN_SPEED            60
+#define TRACKING_MAX_SPEED            500
 #define TRACKING_LOST_COUNT           20
 
 /* 如果实际电机正方向与云台输入正方向相反，把对应值改为 -1 */
@@ -144,15 +144,16 @@ static int16_t Tracking_PIDUpdate(Tracking_PIDTypeDef *Pid, int16_t Error)
 
 static void Tracking_SetMotorSpeed(int16_t SpeedX, int16_t SpeedY)
 {
+	/* 实测电机2控制水平轴，电机1控制竖直轴 */
 	if (SpeedX != Tracking_LastSpeedX)
 	{
-		Stepper_SetSpeed(STEPPER_MOTOR_1, SpeedX);
+		Stepper_SetSpeed(STEPPER_MOTOR_2, SpeedX);
 		Tracking_LastSpeedX = SpeedX;
 	}
 
 	if (SpeedY != Tracking_LastSpeedY)
 	{
-		Stepper_SetSpeed(STEPPER_MOTOR_2, SpeedY);
+		Stepper_SetSpeed(STEPPER_MOTOR_1, SpeedY);
 		Tracking_LastSpeedY = SpeedY;
 	}
 }
@@ -177,8 +178,8 @@ void Tracking_Init(void)
 	Tracking_LastSpeedY = 0;
 
 	/* 先只使用 PD 控制，Ki 保持 0，调试稳定后再小幅增加 */
-	Tracking_PIDConfig(&Tracking_PidX, 3.0f, 0.0f, 0.5f);
-	Tracking_PIDConfig(&Tracking_PidY, 3.0f, 0.0f, 0.5f);
+	Tracking_PIDConfig(&Tracking_PidX, 2.0f, 0.0f, 0.3f);
+	Tracking_PIDConfig(&Tracking_PidY, 2.0f, 0.0f, 0.3f);
 
 	Stepper_StopBoth();
 }
@@ -210,6 +211,7 @@ void Tracking_Task(void)
 {
 	uint8_t RxX;
 	uint8_t RxY;
+	uint8_t RxDetected;
 	int16_t ErrorX;
 	int16_t ErrorY;
 	int16_t SpeedX;
@@ -235,9 +237,18 @@ void Tracking_Task(void)
 		return;
 	}
 
-	/* 数据包前两个数据固定作为激光点像素坐标：第 0 字节是 x，第 1 字节是 y */
+	/* 数据包格式：第 0 字节是 x，第 1 字节是 y，第 2 字节表示是否检测到激光点 */
 	RxX = Serial_RxPacket[0];
 	RxY = Serial_RxPacket[1];
+	RxDetected = Serial_RxPacket[2];
+
+	if (RxDetected == 0)
+	{
+		Tracking_LaserValid = 0;
+		Tracking_NoPacketCount = 0;
+		Tracking_StopAndReset();
+		return;
+	}
 
 	if (Tracking_IsPointValid(RxX, RxY) == 0)
 	{

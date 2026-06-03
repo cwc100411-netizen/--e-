@@ -13,9 +13,13 @@ int main(void)
 	Tracking_Init();
 	Tracking_SetTarget(120, 120);
 	Tracking_Enable(1);
-
+//	Stepper_SetSpeed(STEPPER_MOTOR_2, 200);
+//	Delay_ms(1000);
+//	Stepper_StopBoth();
+//	Stepper_TurnAngleBoth(90, 0);
 	while (1)
 	{
+		
 		Tracking_Task();
 		Delay_ms(TRACKING_CONTROL_PERIOD_MS);
 	}
