@@ -148,6 +148,23 @@ def draw_debug(img, rect, red_center):
         pass
 
 
+def draw_center_cross(img):
+    # 在屏幕中心画白色十字，对应当前默认目标点 (120, 120)
+    cx = CAM_W // 2
+    cy = CAM_H // 2
+    size = 10
+
+    try:
+        img.draw_cross(cx, cy, color=(255, 255, 255), size=size, thickness=2)
+    except Exception:
+        # 如果当前 MaixPy 版本没有 draw_cross，则用两条直线画十字
+        try:
+            img.draw_line(cx - size, cy, cx + size, cy, color=(255, 255, 255), thickness=2)
+            img.draw_line(cx, cy - size, cx, cy + size, color=(255, 255, 255), thickness=2)
+        except Exception:
+            pass
+
+
 def to_byte(value):
     # 串口示例协议每个数据只能占 1 字节
     return max(0, min(255, int(value)))
@@ -225,4 +242,5 @@ while not app.need_exit():
     print_result(rect, rect_center, red_center)
     send_laser_to_uart(red_center)
     draw_debug(img, rect, red_center)
+    draw_center_cross(img)
     show_image(img)

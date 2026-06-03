@@ -7,7 +7,7 @@
 #define TRACKING_DEFAULT_TARGET_X     120
 #define TRACKING_DEFAULT_TARGET_Y     120
 
-#define TRACKING_DEAD_ZONE_PIXEL       2
+#define TRACKING_DEAD_ZONE_PIXEL       1
 #define TRACKING_MIN_SPEED            60
 #define TRACKING_MAX_SPEED            500
 #define TRACKING_LOST_COUNT           20
@@ -39,6 +39,12 @@ static uint16_t Tracking_NoPacketCount;
 static int16_t Tracking_LastSpeedX;
 static int16_t Tracking_LastSpeedY;
 
+/**
+  * 函    数：求 16 位有符号数的绝对值
+  * 参    数：Value 要处理的数值
+  * 返 回 值：Value 的绝对值
+  * 说    明：用于判断像素误差是否进入死区
+  */
 static int16_t Tracking_Abs16(int16_t Value)
 {
 	if (Value < 0)
@@ -48,6 +54,12 @@ static int16_t Tracking_Abs16(int16_t Value)
 	return Value;
 }
 
+/**
+  * 函    数：限制目标像素坐标范围
+  * 参    数：Value 输入的目标坐标
+  * 返 回 值：限制在图像范围内的坐标值
+  * 说    明：当前摄像头分辨率为 240x240，合法坐标为 0~239
+  */
 static uint8_t Tracking_ClampPixel(int16_t Value)
 {
 	if (Value < 0)
@@ -61,6 +73,12 @@ static uint8_t Tracking_ClampPixel(int16_t Value)
 	return (uint8_t)Value;
 }
 
+/**
+  * 函    数：判断激光点坐标是否合法
+  * 参    数：X 激光点 x 坐标
+  * 参    数：Y 激光点 y 坐标
+  * 返 回 值：1 表示坐标合法，0 表示坐标非法
+  */
 static uint8_t Tracking_IsPointValid(uint8_t X, uint8_t Y)
 {
 	if ((X <= TRACKING_IMAGE_MAX_X) && (Y <= TRACKING_IMAGE_MAX_Y))
@@ -70,6 +88,14 @@ static uint8_t Tracking_IsPointValid(uint8_t X, uint8_t Y)
 	return 0;
 }
 
+/**
+  * 函    数：配置 PID 参数并清零 PID 状态
+  * 参    数：Pid 要配置的 PID 结构体
+  * 参    数：Kp 比例系数
+  * 参    数：Ki 积分系数
+  * 参    数：Kd 微分系数
+  * 返 回 值：无
+  */
 static void Tracking_PIDConfig(Tracking_PIDTypeDef *Pid, float Kp, float Ki, float Kd)
 {
 	Pid->Kp = Kp;
@@ -80,6 +106,12 @@ static void Tracking_PIDConfig(Tracking_PIDTypeDef *Pid, float Kp, float Ki, flo
 	Pid->Output = 0.0f;
 }
 
+/**
+  * 函    数：清零 PID 历史误差和输出
+  * 参    数：Pid 要复位的 PID 结构体
+  * 返 回 值：无
+  * 说    明：进入死区、丢失激光或停止追踪时调用，避免旧误差继续影响输出
+  */
 static void Tracking_PIDReset(Tracking_PIDTypeDef *Pid)
 {
 	Pid->ErrorLast = 0.0f;
@@ -87,6 +119,11 @@ static void Tracking_PIDReset(Tracking_PIDTypeDef *Pid)
 	Pid->Output = 0.0f;
 }
 
+/**
+  * 函    数：限制 PID 输出速度范围
+  * 参    数：Speed PID 计算出的速度，单位 step/s
+  * 返 回 值：限制后的速度，范围为正负 TRACKING_MAX_SPEED
+  */
 static int16_t Tracking_LimitSpeed(float Speed)
 {
 	if (Speed > TRACKING_MAX_SPEED)
@@ -101,6 +138,12 @@ static int16_t Tracking_LimitSpeed(float Speed)
 	return (int16_t)Speed;
 }
 
+/**
+  * 函    数：给非零速度补偿最小启动速度
+  * 参    数：Speed 限幅后的速度，单位 step/s
+  * 返 回 值：补偿后的速度
+  * 说    明：步进电机低于一定速度可能不易启动，因此小速度会提升到最小速度
+  */
 static int16_t Tracking_ApplyMinSpeed(int16_t Speed)
 {
 	if (Speed > 0 && Speed < TRACKING_MIN_SPEED)
@@ -114,6 +157,12 @@ static int16_t Tracking_ApplyMinSpeed(int16_t Speed)
 	return Speed;
 }
 
+/**
+  * 函    数：根据方向修正系数调整速度正负号
+  * 参    数：Speed 原始速度，单位 step/s
+  * 参    数：DirSign 方向修正系数，1 保持方向，-1 反向
+  * 返 回 值：修正方向后的速度
+  */
 static int16_t Tracking_ApplyDirSign(int16_t Speed, int8_t DirSign)
 {
 	if (DirSign < 0)
@@ -123,6 +172,12 @@ static int16_t Tracking_ApplyDirSign(int16_t Speed, int8_t DirSign)
 	return Speed;
 }
 
+/**
+  * 函    数：执行一次增量式 PID 计算
+  * 参    数：Pid 要更新的 PID 结构体
+  * 参    数：Error 当前轴的像素误差
+  * 返 回 值：本次输出的电机速度，单位 step/s
+  */
 static int16_t Tracking_PIDUpdate(Tracking_PIDTypeDef *Pid, int16_t Error)
 {
 	float ErrorNow;
@@ -142,6 +197,13 @@ static int16_t Tracking_PIDUpdate(Tracking_PIDTypeDef *Pid, int16_t Error)
 	return Tracking_ApplyMinSpeed(Tracking_LimitSpeed(Pid->Output));
 }
 
+/**
+  * 函    数：设置水平和竖直两个轴的电机速度
+  * 参    数：SpeedX 水平轴速度，单位 step/s
+  * 参    数：SpeedY 竖直轴速度，单位 step/s
+  * 返 回 值：无
+  * 说    明：只有速度变化时才重新设置电机，减少重复停止和启动 PWM
+  */
 static void Tracking_SetMotorSpeed(int16_t SpeedX, int16_t SpeedY)
 {
 	/* 实测电机2控制水平轴，电机1控制竖直轴 */
@@ -158,6 +220,12 @@ static void Tracking_SetMotorSpeed(int16_t SpeedX, int16_t SpeedY)
 	}
 }
 
+/**
+  * 函    数：停止两个轴并复位 PID
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：用于关闭追踪、丢失激光、坐标无效或切换目标后的安全停止
+  */
 static void Tracking_StopAndReset(void)
 {
 	Tracking_SetMotorSpeed(0, 0);
@@ -165,6 +233,12 @@ static void Tracking_StopAndReset(void)
 	Tracking_PIDReset(&Tracking_PidY);
 }
 
+/**
+  * 函    数：初始化追踪模块
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：设置默认目标点、清空状态、配置 PID 参数并停止电机
+  */
 void Tracking_Init(void)
 {
 	Tracking_TargetX = TRACKING_DEFAULT_TARGET_X;
@@ -184,6 +258,13 @@ void Tracking_Init(void)
 	Stepper_StopBoth();
 }
 
+/**
+  * 函    数：设置追踪目标坐标
+  * 参    数：TargetX 目标 x 坐标
+  * 参    数：TargetY 目标 y 坐标
+  * 返 回 值：无
+  * 说    明：目标坐标会被限制在图像范围内，设置后会停止电机并复位 PID
+  */
 void Tracking_SetTarget(int16_t TargetX, int16_t TargetY)
 {
 	Tracking_TargetX = Tracking_ClampPixel(TargetX);
@@ -191,6 +272,12 @@ void Tracking_SetTarget(int16_t TargetX, int16_t TargetY)
 	Tracking_StopAndReset();
 }
 
+/**
+  * 函    数：开启或关闭追踪
+  * 参    数：Enable 1 表示开启追踪，0 表示关闭追踪
+  * 返 回 值：无
+  * 说    明：关闭追踪时立即停止两个电机，开启追踪时清空丢包计数和 PID 状态
+  */
 void Tracking_Enable(uint8_t Enable)
 {
 	if (Enable)
@@ -207,6 +294,12 @@ void Tracking_Enable(uint8_t Enable)
 	}
 }
 
+/**
+  * 函    数：追踪任务函数
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：周期调用，读取摄像头串口数据，计算误差并更新两个轴的电机速度
+  */
 void Tracking_Task(void)
 {
 	uint8_t RxX;
@@ -295,6 +388,12 @@ void Tracking_Task(void)
 	Tracking_SetMotorSpeed(SpeedX, SpeedY);
 }
 
+/**
+  * 函    数：获取最近一次有效激光点坐标
+  * 参    数：X 用于保存激光点 x 坐标，可传入 0 表示不读取
+  * 参    数：Y 用于保存激光点 y 坐标，可传入 0 表示不读取
+  * 返 回 值：1 表示当前有有效激光点，0 表示无有效激光点
+  */
 uint8_t Tracking_GetLaserPoint(uint8_t *X, uint8_t *Y)
 {
 	if (Tracking_LaserValid == 0)
@@ -314,6 +413,12 @@ uint8_t Tracking_GetLaserPoint(uint8_t *X, uint8_t *Y)
 	return 1;
 }
 
+/**
+  * 函    数：获取当前目标坐标
+  * 参    数：X 用于保存目标 x 坐标，可传入 0 表示不读取
+  * 参    数：Y 用于保存目标 y 坐标，可传入 0 表示不读取
+  * 返 回 值：无
+  */
 void Tracking_GetTarget(uint8_t *X, uint8_t *Y)
 {
 	if (X != 0)
