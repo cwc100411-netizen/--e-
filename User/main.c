@@ -11,7 +11,12 @@ int main(void)
 	Serial_Init();
 	Stepper_Init();
 	Tracking_Init();
-	Tracking_SetTarget(120, 120);
+
+	/* 按循迹顺序设置四个点：P1->P2->P3->P4->P1，可直接修改这 8 个坐标做测试 */
+	Tracking_SetQuadrilateral(120, 30, 210, 120, 120, 210, 30, 120);
+	/* 每条边分成 200 段，主循环 10ms 调用一次时，一圈大约 8 秒；启动后会先在 P1 停留约 2 秒 */
+	Tracking_SetQuadrilateralSection(200);
+	Tracking_EnableQuadrilateral(1);
 	Tracking_Enable(1);
 //	Stepper_SetSpeed(STEPPER_MOTOR_2, 200);
 //	Delay_ms(1000);

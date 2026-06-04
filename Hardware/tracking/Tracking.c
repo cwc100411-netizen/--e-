@@ -11,6 +11,9 @@
 #define TRACKING_MIN_SPEED            60
 #define TRACKING_MAX_SPEED            500
 #define TRACKING_LOST_COUNT           20
+#define TRACKING_QUAD_POINT_NUM        4
+#define TRACKING_QUAD_DEFAULT_SECTION 200
+#define TRACKING_QUAD_START_HOLD_COUNT 200
 
 /* 如果实际电机正方向与云台输入正方向相反，把对应值改为 -1 */
 #define TRACKING_MOTOR_X_DIR_SIGN     1
@@ -38,6 +41,13 @@ static uint8_t Tracking_EnableFlag;
 static uint16_t Tracking_NoPacketCount;
 static int16_t Tracking_LastSpeedX;
 static int16_t Tracking_LastSpeedY;
+static uint8_t Tracking_QuadX[TRACKING_QUAD_POINT_NUM];
+static uint8_t Tracking_QuadY[TRACKING_QUAD_POINT_NUM];
+static uint16_t Tracking_QuadSection;
+static uint16_t Tracking_QuadStep;
+static uint8_t Tracking_QuadEdge;
+static uint8_t Tracking_QuadEnableFlag;
+static uint16_t Tracking_QuadHoldCount;
 
 /**
   * 函    数：求 16 位有符号数的绝对值
@@ -221,6 +231,90 @@ static void Tracking_SetMotorSpeed(int16_t SpeedX, int16_t SpeedY)
 }
 
 /**
+  * 函    数：只更新目标点，不停止电机，不复位 PID
+  * 参    数：TargetX 目标 x 坐标
+  * 参    数：TargetY 目标 y 坐标
+  * 返 回 值：无
+  * 说    明：四边形循迹时目标点会连续移动，不能每次移动都清零 PID
+  */
+static void Tracking_UpdateTargetOnly(int16_t TargetX, int16_t TargetY)
+{
+	Tracking_TargetX = Tracking_ClampPixel(TargetX);
+	Tracking_TargetY = Tracking_ClampPixel(TargetY);
+}
+
+/**
+  * 函    数：根据当前边和当前插值步数更新四边形循迹目标点
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：按 P1->P2->P3->P4->P1 的顺序在四条边上做线性插值
+  */
+static void Tracking_UpdateQuadrilateralTarget(void)
+{
+	uint8_t NextEdge;
+	uint16_t SectionLeft;
+	int32_t TargetX;
+	int32_t TargetY;
+
+	if (Tracking_QuadSection == 0)
+	{
+		Tracking_QuadSection = 1;
+	}
+
+	NextEdge = Tracking_QuadEdge + 1;
+	if (NextEdge >= TRACKING_QUAD_POINT_NUM)
+	{
+		NextEdge = 0;
+	}
+
+	SectionLeft = Tracking_QuadSection - Tracking_QuadStep;
+
+	/* 整数插值，避免使用浮点数，便于 F103 调试 */
+	TargetX = ((int32_t)Tracking_QuadX[Tracking_QuadEdge] * SectionLeft
+	         + (int32_t)Tracking_QuadX[NextEdge] * Tracking_QuadStep
+	         + Tracking_QuadSection / 2) / Tracking_QuadSection;
+	TargetY = ((int32_t)Tracking_QuadY[Tracking_QuadEdge] * SectionLeft
+	         + (int32_t)Tracking_QuadY[NextEdge] * Tracking_QuadStep
+	         + Tracking_QuadSection / 2) / Tracking_QuadSection;
+
+	Tracking_UpdateTargetOnly((int16_t)TargetX, (int16_t)TargetY);
+}
+
+/**
+  * 函    数：四边形循迹目标点前进一步
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：每收到一次有效激光点后前进一步，速度由分段数和主循环周期共同决定
+  */
+static void Tracking_MoveQuadrilateralTarget(void)
+{
+	if (Tracking_QuadEnableFlag == 0)
+	{
+		return;
+	}
+
+	if (Tracking_QuadHoldCount > 0)
+	{
+		Tracking_QuadHoldCount--;
+		return;
+	}
+
+	if (Tracking_QuadStep < Tracking_QuadSection)
+	{
+		Tracking_QuadStep++;
+	}
+	else
+	{
+		Tracking_QuadStep = 0;
+		Tracking_QuadEdge++;
+		if (Tracking_QuadEdge >= TRACKING_QUAD_POINT_NUM)
+		{
+			Tracking_QuadEdge = 0;
+		}
+	}
+}
+
+/**
   * 函    数：停止两个轴并复位 PID
   * 参    数：无
   * 返 回 值：无
@@ -250,6 +344,19 @@ void Tracking_Init(void)
 	Tracking_NoPacketCount = 0;
 	Tracking_LastSpeedX = 0;
 	Tracking_LastSpeedY = 0;
+	Tracking_QuadSection = TRACKING_QUAD_DEFAULT_SECTION;
+	Tracking_QuadStep = 0;
+	Tracking_QuadEdge = 0;
+	Tracking_QuadEnableFlag = 0;
+	Tracking_QuadHoldCount = 0;
+	Tracking_QuadX[0] = 60;
+	Tracking_QuadY[0] = 60;
+	Tracking_QuadX[1] = 180;
+	Tracking_QuadY[1] = 60;
+	Tracking_QuadX[2] = 180;
+	Tracking_QuadY[2] = 180;
+	Tracking_QuadX[3] = 60;
+	Tracking_QuadY[3] = 180;
 
 	/* 先只使用 PD 控制，Ki 保持 0，调试稳定后再小幅增加 */
 	Tracking_PIDConfig(&Tracking_PidX, 2.0f, 0.0f, 0.3f);
@@ -269,6 +376,84 @@ void Tracking_SetTarget(int16_t TargetX, int16_t TargetY)
 {
 	Tracking_TargetX = Tracking_ClampPixel(TargetX);
 	Tracking_TargetY = Tracking_ClampPixel(TargetY);
+	Tracking_StopAndReset();
+}
+
+/**
+  * 函    数：设置四边形循迹的四个顶点
+  * 参    数：X1 第 1 个点 x 坐标
+  * 参    数：Y1 第 1 个点 y 坐标
+  * 参    数：X2 第 2 个点 x 坐标
+  * 参    数：Y2 第 2 个点 y 坐标
+  * 参    数：X3 第 3 个点 x 坐标
+  * 参    数：Y3 第 3 个点 y 坐标
+  * 参    数：X4 第 4 个点 x 坐标
+  * 参    数：Y4 第 4 个点 y 坐标
+  * 返 回 值：无
+  * 说    明：请按实际循迹顺序输入四个点，程序会自动连成 P1->P2->P3->P4->P1
+  */
+void Tracking_SetQuadrilateral(int16_t X1, int16_t Y1,
+                               int16_t X2, int16_t Y2,
+                               int16_t X3, int16_t Y3,
+                               int16_t X4, int16_t Y4)
+{
+	Tracking_QuadX[0] = Tracking_ClampPixel(X1);
+	Tracking_QuadY[0] = Tracking_ClampPixel(Y1);
+	Tracking_QuadX[1] = Tracking_ClampPixel(X2);
+	Tracking_QuadY[1] = Tracking_ClampPixel(Y2);
+	Tracking_QuadX[2] = Tracking_ClampPixel(X3);
+	Tracking_QuadY[2] = Tracking_ClampPixel(Y3);
+	Tracking_QuadX[3] = Tracking_ClampPixel(X4);
+	Tracking_QuadY[3] = Tracking_ClampPixel(Y4);
+
+	Tracking_QuadEdge = 0;
+	Tracking_QuadStep = 0;
+	Tracking_QuadHoldCount = TRACKING_QUAD_START_HOLD_COUNT;
+	Tracking_UpdateQuadrilateralTarget();
+	Tracking_StopAndReset();
+}
+
+/**
+  * 函    数：设置四边形每条边的插值分段数
+  * 参    数：Section 每条边分成多少小段，数值越大循迹越慢
+  * 返 回 值：无
+  * 说    明：主循环 10ms 调用一次时，200 段大约一圈 8 秒
+  */
+void Tracking_SetQuadrilateralSection(uint16_t Section)
+{
+	if (Section == 0)
+	{
+		Section = 1;
+	}
+
+	Tracking_QuadSection = Section;
+	Tracking_QuadEdge = 0;
+	Tracking_QuadStep = 0;
+	Tracking_QuadHoldCount = TRACKING_QUAD_START_HOLD_COUNT;
+	Tracking_UpdateQuadrilateralTarget();
+	Tracking_StopAndReset();
+}
+
+/**
+  * 函    数：开启或关闭四边形循迹目标生成
+  * 参    数：Enable 1 表示使用四边形移动目标，0 表示使用固定目标
+  * 返 回 值：无
+  */
+void Tracking_EnableQuadrilateral(uint8_t Enable)
+{
+	if (Enable)
+	{
+		Tracking_QuadEnableFlag = 1;
+		Tracking_QuadEdge = 0;
+		Tracking_QuadStep = 0;
+		Tracking_QuadHoldCount = TRACKING_QUAD_START_HOLD_COUNT;
+		Tracking_UpdateQuadrilateralTarget();
+	}
+	else
+	{
+		Tracking_QuadEnableFlag = 0;
+	}
+
 	Tracking_StopAndReset();
 }
 
@@ -356,6 +541,11 @@ void Tracking_Task(void)
 	Tracking_LaserValid = 1;
 	Tracking_NoPacketCount = 0;
 
+	if (Tracking_QuadEnableFlag)
+	{
+		Tracking_UpdateQuadrilateralTarget();
+	}
+
 	/* 图像 x 向右为正，云台 x 向右为正，误差直接使用目标减当前位置 */
 	ErrorX = (int16_t)Tracking_TargetX - (int16_t)Tracking_LaserX;
 
@@ -386,6 +576,7 @@ void Tracking_Task(void)
 	SpeedY = Tracking_ApplyDirSign(SpeedY, TRACKING_MOTOR_Y_DIR_SIGN);
 
 	Tracking_SetMotorSpeed(SpeedX, SpeedY);
+	Tracking_MoveQuadrilateralTarget();
 }
 
 /**
