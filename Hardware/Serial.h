@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#define SERIAL_RX_PACKET_LENGTH 8
+#define SERIAL_RX_PACKET_LENGTH 10
 
 extern uint8_t Serial_TxPacket[];
 extern volatile uint8_t Serial_RxPacket[];

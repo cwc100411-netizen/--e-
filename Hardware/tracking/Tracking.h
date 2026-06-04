@@ -31,12 +31,21 @@ void Tracking_SetTarget(int16_t TargetX, int16_t TargetY);
   * 参    数：X4 第 4 个点 x 坐标
   * 参    数：Y4 第 4 个点 y 坐标
   * 返 回 值：无
-  * 说    明：请按循迹顺序输入四个点，程序按 P1->P2->P3->P4->P1 运行
+  * 说    明：请按循迹顺序输入四个点，程序按 P1->P2->P3->P4->P1 运行；
+  *           手动调用后会直接视为四边形已锁定
   */
 void Tracking_SetQuadrilateral(int16_t X1, int16_t Y1,
                                int16_t X2, int16_t Y2,
                                int16_t X3, int16_t Y3,
                                int16_t X4, int16_t Y4);
+
+/**
+  * 函    数：重新等待串口矩形锁定
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：更换矩形框或需要重新识别路径时调用
+  */
+void Tracking_ResetQuadrilateralLock(void);
 
 /**
   * 函    数：设置四边形每条边的插值分段数

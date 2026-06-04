@@ -14,6 +14,7 @@
 #define TRACKING_QUAD_POINT_NUM        4
 #define TRACKING_QUAD_DEFAULT_SECTION 200
 #define TRACKING_QUAD_START_HOLD_COUNT 200
+#define TRACKING_QUAD_LOCK_FRAME_COUNT 5
 
 /* 如果实际电机正方向与云台输入正方向相反，把对应值改为 -1 */
 #define TRACKING_MOTOR_X_DIR_SIGN     1
@@ -48,6 +49,8 @@ static uint16_t Tracking_QuadStep;
 static uint8_t Tracking_QuadEdge;
 static uint8_t Tracking_QuadEnableFlag;
 static uint16_t Tracking_QuadHoldCount;
+static uint8_t Tracking_QuadLocked;
+static uint8_t Tracking_QuadLockCount;
 
 /**
   * 函    数：求 16 位有符号数的绝对值
@@ -96,6 +99,67 @@ static uint8_t Tracking_IsPointValid(uint8_t X, uint8_t Y)
 		return 1;
 	}
 	return 0;
+}
+
+/**
+  * 函    数：判断四边形顶点坐标是否合法
+  * 参    数：X1~Y4 四个顶点坐标
+  * 返 回 值：1 表示合法，0 表示非法
+  * 说    明：除坐标范围外，额外判断面积，避免全 0 或噪声点误触发循迹
+  */
+static uint8_t Tracking_IsQuadrilateralValid(uint8_t X1, uint8_t Y1,
+                                             uint8_t X2, uint8_t Y2,
+                                             uint8_t X3, uint8_t Y3,
+                                             uint8_t X4, uint8_t Y4)
+{
+	int32_t Area2;
+
+	if (Tracking_IsPointValid(X1, Y1) == 0 ||
+	    Tracking_IsPointValid(X2, Y2) == 0 ||
+	    Tracking_IsPointValid(X3, Y3) == 0 ||
+	    Tracking_IsPointValid(X4, Y4) == 0)
+	{
+		return 0;
+	}
+
+	/* 四边形有向面积的 2 倍，阈值太小说明不是有效矩形框 */
+	Area2 = (int32_t)X1 * Y2 - (int32_t)X2 * Y1
+	      + (int32_t)X2 * Y3 - (int32_t)X3 * Y2
+	      + (int32_t)X3 * Y4 - (int32_t)X4 * Y3
+	      + (int32_t)X4 * Y1 - (int32_t)X1 * Y4;
+
+	if (Area2 < 0)
+	{
+		Area2 = -Area2;
+	}
+
+	if (Area2 < 100)
+	{
+		return 0;
+	}
+
+	return 1;
+}
+
+/**
+  * 函    数：用串口收到的四个顶点更新四边形路径
+  * 参    数：X1~Y4 四个顶点坐标
+  * 返 回 值：无
+  * 说    明：只更新路径顶点，不停止电机，不清 PID，避免每帧重启循迹
+  */
+static void Tracking_UpdateQuadrilateralPoints(uint8_t X1, uint8_t Y1,
+                                               uint8_t X2, uint8_t Y2,
+                                               uint8_t X3, uint8_t Y3,
+                                               uint8_t X4, uint8_t Y4)
+{
+	Tracking_QuadX[0] = X1;
+	Tracking_QuadY[0] = Y1;
+	Tracking_QuadX[1] = X2;
+	Tracking_QuadY[1] = Y2;
+	Tracking_QuadX[2] = X3;
+	Tracking_QuadY[2] = Y3;
+	Tracking_QuadX[3] = X4;
+	Tracking_QuadY[3] = Y4;
 }
 
 /**
@@ -293,6 +357,11 @@ static void Tracking_MoveQuadrilateralTarget(void)
 		return;
 	}
 
+	if (Tracking_QuadLocked == 0)
+	{
+		return;
+	}
+
 	if (Tracking_QuadHoldCount > 0)
 	{
 		Tracking_QuadHoldCount--;
@@ -349,6 +418,8 @@ void Tracking_Init(void)
 	Tracking_QuadEdge = 0;
 	Tracking_QuadEnableFlag = 0;
 	Tracking_QuadHoldCount = 0;
+	Tracking_QuadLocked = 0;
+	Tracking_QuadLockCount = 0;
 	Tracking_QuadX[0] = 60;
 	Tracking_QuadY[0] = 60;
 	Tracking_QuadX[1] = 180;
@@ -390,7 +461,8 @@ void Tracking_SetTarget(int16_t TargetX, int16_t TargetY)
   * 参    数：X4 第 4 个点 x 坐标
   * 参    数：Y4 第 4 个点 y 坐标
   * 返 回 值：无
-  * 说    明：请按实际循迹顺序输入四个点，程序会自动连成 P1->P2->P3->P4->P1
+  * 说    明：请按实际循迹顺序输入四个点，程序会自动连成 P1->P2->P3->P4->P1；
+  *           手动调用后会直接视为四边形已锁定
   */
 void Tracking_SetQuadrilateral(int16_t X1, int16_t Y1,
                                int16_t X2, int16_t Y2,
@@ -409,7 +481,26 @@ void Tracking_SetQuadrilateral(int16_t X1, int16_t Y1,
 	Tracking_QuadEdge = 0;
 	Tracking_QuadStep = 0;
 	Tracking_QuadHoldCount = TRACKING_QUAD_START_HOLD_COUNT;
+	Tracking_QuadLocked = 1;
+	Tracking_QuadLockCount = TRACKING_QUAD_LOCK_FRAME_COUNT;
 	Tracking_UpdateQuadrilateralTarget();
+	Tracking_StopAndReset();
+}
+
+/**
+  * 函    数：重新等待串口矩形锁定
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：更换矩形框或需要重新识别路径时调用，之后会等待新的有效矩形坐标
+  */
+void Tracking_ResetQuadrilateralLock(void)
+{
+	Tracking_QuadLocked = 0;
+	Tracking_QuadLockCount = 0;
+	Tracking_QuadEdge = 0;
+	Tracking_QuadStep = 0;
+	Tracking_QuadHoldCount = 0;
+	Tracking_LaserValid = 0;
 	Tracking_StopAndReset();
 }
 
@@ -487,9 +578,16 @@ void Tracking_Enable(uint8_t Enable)
   */
 void Tracking_Task(void)
 {
-	uint8_t RxX;
-	uint8_t RxY;
-	uint8_t RxDetected;
+	uint8_t RxLaserX;
+	uint8_t RxLaserY;
+	uint8_t RxP1X;
+	uint8_t RxP1Y;
+	uint8_t RxP2X;
+	uint8_t RxP2Y;
+	uint8_t RxP3X;
+	uint8_t RxP3Y;
+	uint8_t RxP4X;
+	uint8_t RxP4Y;
 	int16_t ErrorX;
 	int16_t ErrorY;
 	int16_t SpeedX;
@@ -515,12 +613,19 @@ void Tracking_Task(void)
 		return;
 	}
 
-	/* 数据包格式：第 0 字节是 x，第 1 字节是 y，第 2 字节表示是否检测到激光点 */
-	RxX = Serial_RxPacket[0];
-	RxY = Serial_RxPacket[1];
-	RxDetected = Serial_RxPacket[2];
+	/* 数据包格式：激光 x,y + 四边形四个顶点 x,y，共 10 字节 */
+	RxLaserX = Serial_RxPacket[0];
+	RxLaserY = Serial_RxPacket[1];
+	RxP1X = Serial_RxPacket[2];
+	RxP1Y = Serial_RxPacket[3];
+	RxP2X = Serial_RxPacket[4];
+	RxP2Y = Serial_RxPacket[5];
+	RxP3X = Serial_RxPacket[6];
+	RxP3Y = Serial_RxPacket[7];
+	RxP4X = Serial_RxPacket[8];
+	RxP4Y = Serial_RxPacket[9];
 
-	if (RxDetected == 0)
+	if (Tracking_IsPointValid(RxLaserX, RxLaserY) == 0)
 	{
 		Tracking_LaserValid = 0;
 		Tracking_NoPacketCount = 0;
@@ -528,21 +633,48 @@ void Tracking_Task(void)
 		return;
 	}
 
-	if (Tracking_IsPointValid(RxX, RxY) == 0)
+	if (Tracking_QuadEnableFlag && Tracking_QuadLocked == 0)
 	{
-		Tracking_LaserValid = 0;
-		Tracking_NoPacketCount = 0;
-		Tracking_StopAndReset();
-		return;
+		if (Tracking_IsQuadrilateralValid(RxP1X, RxP1Y, RxP2X, RxP2Y,
+		                                  RxP3X, RxP3Y, RxP4X, RxP4Y) == 0)
+		{
+			Tracking_LaserValid = 0;
+			Tracking_NoPacketCount = 0;
+			Tracking_QuadLockCount = 0;
+			Tracking_StopAndReset();
+			return;
+		}
 	}
 
-	Tracking_LaserX = RxX;
-	Tracking_LaserY = RxY;
+	Tracking_LaserX = RxLaserX;
+	Tracking_LaserY = RxLaserY;
 	Tracking_LaserValid = 1;
 	Tracking_NoPacketCount = 0;
 
 	if (Tracking_QuadEnableFlag)
 	{
+		if (Tracking_QuadLocked == 0)
+		{
+			/* 锁定前连续接收几帧有效矩形，锁定后忽略后续矩形抖动 */
+			Tracking_UpdateQuadrilateralPoints(RxP1X, RxP1Y, RxP2X, RxP2Y,
+			                                   RxP3X, RxP3Y, RxP4X, RxP4Y);
+
+			if (Tracking_QuadLockCount < TRACKING_QUAD_LOCK_FRAME_COUNT)
+			{
+				Tracking_QuadLockCount++;
+			}
+
+			if (Tracking_QuadLockCount >= TRACKING_QUAD_LOCK_FRAME_COUNT)
+			{
+				Tracking_QuadLocked = 1;
+				Tracking_QuadEdge = 0;
+				Tracking_QuadStep = 0;
+				Tracking_QuadHoldCount = TRACKING_QUAD_START_HOLD_COUNT;
+				Tracking_PIDReset(&Tracking_PidX);
+				Tracking_PIDReset(&Tracking_PidY);
+			}
+		}
+
 		Tracking_UpdateQuadrilateralTarget();
 	}
 

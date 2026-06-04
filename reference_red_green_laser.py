@@ -5,7 +5,7 @@ from maix import app, camera, display, err, pinmap, sys, time, uart
 CAM_W, CAM_H = 240, 240
 
 # LAB 阈值，参考 notebook 中的一号机 2.0 红色激光参数
-RED_THRESH = [(0, 100, 14, 51, -8, 17)]
+RED_THRESH =  [(0, 100, 10, 80, -30, 50)]
 
 # LAB 阈值，参考 Maix 示例：先二值化黑色区域，再查找矩形
 BLACK_RECT_THRESH = [[0, 33, -100, 100, -100, 100]]
@@ -211,19 +211,25 @@ def to_byte(value):
 
 
 def build_frame(numbers):
-    # 发送.py 中的协议：帧头 + 8 字节数据 + 帧尾
-    if len(numbers) != 8:
-        raise ValueError("必须发送 8 个数字")
+    # 协议：帧头 + 10 字节坐标 + 帧尾
+    if len(numbers) != 10:
+        raise ValueError("必须发送 10 个坐标字节")
 
     return bytes([FRAME_HEAD]) + bytes([to_byte(n) for n in numbers]) + bytes([FRAME_TAIL])
 
 
-def send_laser_to_uart(red_center):
-    # 数据格式：red_x, red_y, detected, 0, 0, 0, 0, 0
-    if red_center is None:
-        numbers = [0, 0, 0, 0, 0, 0, 0, 0]
-    else:
-        numbers = [red_center[0], red_center[1], 1, 0, 0, 0, 0, 0]
+def send_tracking_to_uart(red_center, rect):
+    # 数据格式：激光 x,y + 矩形四个顶点 x,y；无额外状态字节
+    if red_center is None or rect is None:
+        return
+
+    numbers = [
+        red_center[0], red_center[1],
+        rect[0], rect[1],
+        rect[2], rect[3],
+        rect[4], rect[5],
+        rect[6], rect[7],
+    ]
 
     frame = build_frame(numbers)
     serial.write(frame)
@@ -258,13 +264,19 @@ def print_result(rect, rect_center, red_center):
 
 print("p1_x p1_y | p2_x p2_y | p3_x p3_y | p4_x p4_y | rect_cx rect_cy | red_cx red_cy")
 last_print_ms = time.ticks_ms() - PRINT_PERIOD_MS
+last_rect = None
 
 while not app.need_exit():
     img = capture_image()
 
     # 黑框识别：参考 Maix 示例，使用 binary + find_rects，不改动原图上的激光识别
     rect = find_black_rect(img)
-    center = rect_center(rect) if rect is not None else None
+    if rect is not None:
+        # 串口协议保持 10 个坐标字节；矩形偶尔漏检时继续使用最近一次有效矩形
+        last_rect = rect[:]
+
+    uart_rect = last_rect
+    center = rect_center(uart_rect) if uart_rect is not None else None
 
     # 红色激光识别，参考 notebook 中的 img.find_blobs(red, ...)
     red_blobs = img.find_blobs(
@@ -280,9 +292,9 @@ while not app.need_exit():
 
     now_ms = time.ticks_ms()
     if now_ms - last_print_ms >= PRINT_PERIOD_MS:
-        print_result(rect, center, red_center)
+        print_result(uart_rect, center, red_center)
         last_print_ms = now_ms
 
-    send_laser_to_uart(red_center)
-    draw_debug(img, rect, red_center)
+    send_tracking_to_uart(red_center, uart_rect)
+    draw_debug(img, uart_rect, red_center)
     show_image(img)

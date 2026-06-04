@@ -4,7 +4,7 @@
 #include <stdarg.h>
 
 uint8_t Serial_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
-volatile uint8_t Serial_RxPacket[SERIAL_RX_PACKET_LENGTH];	//定义接收数据包数组
+volatile uint8_t Serial_RxPacket[SERIAL_RX_PACKET_LENGTH];	//定义接收数据包数组，格式：激光 x,y + 四边形 4 个顶点 x,y
 volatile uint8_t Serial_RxFlag;			//定义接收数据包标志位
 
 /**
@@ -227,7 +227,7 @@ void USART1_IRQHandler(void)
 		{
 			Serial_RxPacket[pRxPacket] = RxData;	//将数据存入数据包数组的指定位置
 			pRxPacket ++;				//数据包的位置自增
-			if (pRxPacket >= SERIAL_RX_PACKET_LENGTH)	//如果收够8个数据
+			if (pRxPacket >= SERIAL_RX_PACKET_LENGTH)	//如果收够一帧坐标数据
 			{
 				RxState = 2;			//置下一个状态
 			}
