@@ -1,4 +1,4 @@
-from maix import app, camera, display, err, pinmap, sys, uart
+from maix import app, camera, display, err, pinmap, sys, time, uart
 
 
 # 摄像头尺寸参考 notebook 输出，画面中心为 120,120
@@ -7,12 +7,20 @@ CAM_W, CAM_H = 240, 240
 # LAB 阈值，参考 notebook 中的一号机 2.0 红色激光参数
 RED_THRESH = [(0, 100, 14, 51, -8, 17)]
 
+# LAB 阈值，参考 Maix 示例：先二值化黑色区域，再查找矩形
+BLACK_RECT_THRESH = [[0, 33, -100, 100, -100, 100]]
+RECT_ROI = [20, 20, CAM_W - 40, CAM_H - 40]
+RECT_THRESHOLD = 10000
+
 # 红色激光点通常很小，阈值保持 notebook 的设置
 PIXELS_THRESHOLD = 2
 MERGE_MARGIN = 3
 
 # 是否显示调试画面
 SHOW_IMAGE = True
+
+# 坐标打印周期，单位 ms；串口发送不受这个周期影响
+PRINT_PERIOD_MS = 200
 
 # 串口配置，参考“发送.py”
 BAUDRATE = 115200
@@ -111,21 +119,70 @@ def blob_center(blob):
     return int(x + w / 2), int(y + h / 2)
 
 
-def line_rect(line):
-    # find_line 返回的 rect 为四个角点：x1,y1,x2,y2,x3,y3,x4,y4
-    rect = read_attr(line, "rect", None)
-    if rect is None or len(rect) < 8:
+def rect_to_points(rect):
+    # find_rects 返回的矩形对象通过 corners() 读取四个角点
+    corners = read_attr(rect, "corners", None)
+    if corners is None or len(corners) < 4:
         return None
-    return [int(v) for v in rect[:8]]
+
+    points = []
+    for i in range(4):
+        points.append(int(corners[i][0]))
+        points.append(int(corners[i][1]))
+
+    return points
 
 
-def line_center(line, rect):
-    # 优先使用 find_line 返回的中心点，没有则由四个角点平均得到
-    cx = read_attr(line, "cx", None)
-    cy = read_attr(line, "cy", None)
-    if cx is not None and cy is not None:
-        return int(cx), int(cy)
+def rect_area(points):
+    # 用四边形面积筛选最大矩形，避免误检到较小噪声矩形
+    area = 0
+    for i in range(4):
+        j = (i + 1) % 4
+        x1 = points[i * 2]
+        y1 = points[i * 2 + 1]
+        x2 = points[j * 2]
+        y2 = points[j * 2 + 1]
+        area += x1 * y2 - x2 * y1
 
+    if area < 0:
+        area = -area
+    return area
+
+
+def find_max_rect(rects):
+    # 从 find_rects 结果中选出面积最大的矩形
+    best_points = None
+    best_area = 0
+
+    for rect in rects:
+        points = rect_to_points(rect)
+        if points is None:
+            continue
+
+        area = rect_area(points)
+        if area > best_area:
+            best_area = area
+            best_points = points
+
+    return best_points
+
+
+def find_black_rect(img):
+    # 参考 Maix 示例：复制一张二值图用于矩形检测，原图继续用于激光识别和显示
+    try:
+        binary_img = img.binary(BLACK_RECT_THRESH, copy=True)
+        rects = binary_img.find_rects(RECT_ROI, RECT_THRESHOLD)
+    except Exception:
+        return None
+
+    if not rects:
+        return None
+
+    return find_max_rect(rects)
+
+
+def rect_center(rect):
+    # 由四个角点平均得到矩形中心
     return (
         int((rect[0] + rect[2] + rect[4] + rect[6]) / 4),
         int((rect[1] + rect[3] + rect[5] + rect[7]) / 4),
@@ -146,23 +203,6 @@ def draw_debug(img, rect, red_center):
     except Exception:
         # 不同 MaixPy 版本绘图接口略有差异，绘制失败时只保留打印
         pass
-
-
-def draw_center_cross(img):
-    # 在屏幕中心画白色十字，对应当前默认目标点 (120, 120)
-    cx = CAM_W // 2
-    cy = CAM_H // 2
-    size = 10
-
-    try:
-        img.draw_cross(cx, cy, color=(255, 255, 255), size=size, thickness=2)
-    except Exception:
-        # 如果当前 MaixPy 版本没有 draw_cross，则用两条直线画十字
-        try:
-            img.draw_line(cx - size, cy, cx + size, cy, color=(255, 255, 255), thickness=2)
-            img.draw_line(cx, cy - size, cx, cy + size, color=(255, 255, 255), thickness=2)
-        except Exception:
-            pass
 
 
 def to_byte(value):
@@ -187,7 +227,6 @@ def send_laser_to_uart(red_center):
 
     frame = build_frame(numbers)
     serial.write(frame)
-    print("uart:", numbers)
 
 
 def print_result(rect, rect_center, red_center):
@@ -218,14 +257,14 @@ def print_result(rect, rect_center, red_center):
 
 
 print("p1_x p1_y | p2_x p2_y | p3_x p3_y | p4_x p4_y | rect_cx rect_cy | red_cx red_cy")
+last_print_ms = time.ticks_ms() - PRINT_PERIOD_MS
 
 while not app.need_exit():
     img = capture_image()
 
-    # 黑框识别，参考 notebook 中的 img.find_line()
-    line = img.find_lines()
-    rect = line_rect(line)
-    rect_center = line_center(line, rect) if rect is not None else None
+    # 黑框识别：参考 Maix 示例，使用 binary + find_rects，不改动原图上的激光识别
+    rect = find_black_rect(img)
+    center = rect_center(rect) if rect is not None else None
 
     # 红色激光识别，参考 notebook 中的 img.find_blobs(red, ...)
     red_blobs = img.find_blobs(
@@ -239,8 +278,11 @@ while not app.need_exit():
         red_blob = red_blobs[find_max(red_blobs)]
         red_center = blob_center(red_blob)
 
-    print_result(rect, rect_center, red_center)
+    now_ms = time.ticks_ms()
+    if now_ms - last_print_ms >= PRINT_PERIOD_MS:
+        print_result(rect, center, red_center)
+        last_print_ms = now_ms
+
     send_laser_to_uart(red_center)
     draw_debug(img, rect, red_center)
-    draw_center_cross(img)
     show_image(img)
