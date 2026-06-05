@@ -4,6 +4,7 @@
 #include "Key.h"
 #include "Stepper.h"
 #include "Tracking.h"
+#include "Timer.h"
 
 int main(void)
 {
@@ -18,14 +19,16 @@ int main(void)
 	Tracking_SetQuadrilateralSection(200);
 	Tracking_EnableQuadrilateral(1);
 	Tracking_Enable(1);
+	Timer_Init();
 //	Stepper_SetSpeed(STEPPER_MOTOR_2, 200);
 //	Delay_ms(1000);
 //	Stepper_StopBoth();
 //	Stepper_TurnAngleBoth(90, 0);
 	while (1)
 	{
-		
-		Tracking_Task();
-		Delay_ms(TRACKING_CONTROL_PERIOD_MS);
+		if (Timer_GetFlag())
+		{
+			Tracking_Task();
+		}
 	}
 }

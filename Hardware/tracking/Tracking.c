@@ -1,6 +1,7 @@
 #include "Tracking.h"
 #include "Serial.h"
 #include "Stepper.h"
+#include "pid.h"
 
 #define TRACKING_IMAGE_MAX_X          239
 #define TRACKING_IMAGE_MAX_Y          239
@@ -20,18 +21,8 @@
 #define TRACKING_MOTOR_X_DIR_SIGN     1
 #define TRACKING_MOTOR_Y_DIR_SIGN     1
 
-typedef struct
-{
-	float Kp;
-	float Ki;
-	float Kd;
-	float ErrorLast;
-	float ErrorLast2;
-	float Output;
-} Tracking_PIDTypeDef;
-
-static Tracking_PIDTypeDef Tracking_PidX;
-static Tracking_PIDTypeDef Tracking_PidY;
+static PID_TypeDef Tracking_PidX;
+static PID_TypeDef Tracking_PidY;
 
 static uint8_t Tracking_TargetX;
 static uint8_t Tracking_TargetY;
@@ -163,37 +154,6 @@ static void Tracking_UpdateQuadrilateralPoints(uint8_t X1, uint8_t Y1,
 }
 
 /**
-  * 函    数：配置 PID 参数并清零 PID 状态
-  * 参    数：Pid 要配置的 PID 结构体
-  * 参    数：Kp 比例系数
-  * 参    数：Ki 积分系数
-  * 参    数：Kd 微分系数
-  * 返 回 值：无
-  */
-static void Tracking_PIDConfig(Tracking_PIDTypeDef *Pid, float Kp, float Ki, float Kd)
-{
-	Pid->Kp = Kp;
-	Pid->Ki = Ki;
-	Pid->Kd = Kd;
-	Pid->ErrorLast = 0.0f;
-	Pid->ErrorLast2 = 0.0f;
-	Pid->Output = 0.0f;
-}
-
-/**
-  * 函    数：清零 PID 历史误差和输出
-  * 参    数：Pid 要复位的 PID 结构体
-  * 返 回 值：无
-  * 说    明：进入死区、丢失激光或停止追踪时调用，避免旧误差继续影响输出
-  */
-static void Tracking_PIDReset(Tracking_PIDTypeDef *Pid)
-{
-	Pid->ErrorLast = 0.0f;
-	Pid->ErrorLast2 = 0.0f;
-	Pid->Output = 0.0f;
-}
-
-/**
   * 函    数：限制 PID 输出速度范围
   * 参    数：Speed PID 计算出的速度，单位 step/s
   * 返 回 值：限制后的速度，范围为正负 TRACKING_MAX_SPEED
@@ -247,28 +207,15 @@ static int16_t Tracking_ApplyDirSign(int16_t Speed, int8_t DirSign)
 }
 
 /**
-  * 函    数：执行一次增量式 PID 计算
+  * 函    数：根据 PID 输出计算电机速度
   * 参    数：Pid 要更新的 PID 结构体
   * 参    数：Error 当前轴的像素误差
-  * 返 回 值：本次输出的电机速度，单位 step/s
+  * 返 回 值：限幅并补偿最小启动速度后的电机速度，单位 step/s
+  * 说    明：PID 模块只负责计算，Tracking 保留电机速度相关处理
   */
-static int16_t Tracking_PIDUpdate(Tracking_PIDTypeDef *Pid, int16_t Error)
+static int16_t Tracking_CalcPidSpeed(PID_TypeDef *Pid, int16_t Error)
 {
-	float ErrorNow;
-	float Delta;
-
-	ErrorNow = (float)Error;
-
-	/* 增量式 PID：输出值表示电机速度，单位 step/s */
-	Delta = Pid->Kp * (ErrorNow - Pid->ErrorLast)
-	      + Pid->Ki * ErrorNow
-	      + Pid->Kd * (ErrorNow - 2.0f * Pid->ErrorLast + Pid->ErrorLast2);
-
-	Pid->Output += Delta;
-	Pid->ErrorLast2 = Pid->ErrorLast;
-	Pid->ErrorLast = ErrorNow;
-
-	return Tracking_ApplyMinSpeed(Tracking_LimitSpeed(Pid->Output));
+	return Tracking_ApplyMinSpeed(Tracking_LimitSpeed(PID_Update(Pid, (float)Error)));
 }
 
 /**
@@ -392,8 +339,8 @@ static void Tracking_MoveQuadrilateralTarget(void)
 static void Tracking_StopAndReset(void)
 {
 	Tracking_SetMotorSpeed(0, 0);
-	Tracking_PIDReset(&Tracking_PidX);
-	Tracking_PIDReset(&Tracking_PidY);
+	PID_Reset(&Tracking_PidX);
+	PID_Reset(&Tracking_PidY);
 }
 
 /**
@@ -430,8 +377,8 @@ void Tracking_Init(void)
 	Tracking_QuadY[3] = 180;
 
 	/* 先只使用 PD 控制，Ki 保持 0，调试稳定后再小幅增加 */
-	Tracking_PIDConfig(&Tracking_PidX, 2.0f, 0.0f, 0.3f);
-	Tracking_PIDConfig(&Tracking_PidY, 2.0f, 0.0f, 0.3f);
+	PID_Config(&Tracking_PidX, 2.0f, 0.0f, 0.3f);
+	PID_Config(&Tracking_PidY, 2.0f, 0.0f, 0.3f);
 
 	Stepper_StopBoth();
 }
@@ -560,8 +507,8 @@ void Tracking_Enable(uint8_t Enable)
 	{
 		Tracking_EnableFlag = 1;
 		Tracking_NoPacketCount = 0;
-		Tracking_PIDReset(&Tracking_PidX);
-		Tracking_PIDReset(&Tracking_PidY);
+		PID_Reset(&Tracking_PidX);
+		PID_Reset(&Tracking_PidY);
 	}
 	else
 	{
@@ -670,8 +617,8 @@ void Tracking_Task(void)
 				Tracking_QuadEdge = 0;
 				Tracking_QuadStep = 0;
 				Tracking_QuadHoldCount = TRACKING_QUAD_START_HOLD_COUNT;
-				Tracking_PIDReset(&Tracking_PidX);
-				Tracking_PIDReset(&Tracking_PidY);
+				PID_Reset(&Tracking_PidX);
+				PID_Reset(&Tracking_PidY);
 			}
 		}
 
@@ -687,21 +634,21 @@ void Tracking_Task(void)
 	if (Tracking_Abs16(ErrorX) <= TRACKING_DEAD_ZONE_PIXEL)
 	{
 		SpeedX = 0;
-		Tracking_PIDReset(&Tracking_PidX);
+		PID_Reset(&Tracking_PidX);
 	}
 	else
 	{
-		SpeedX = Tracking_PIDUpdate(&Tracking_PidX, ErrorX);
+		SpeedX = Tracking_CalcPidSpeed(&Tracking_PidX, ErrorX);
 	}
 
 	if (Tracking_Abs16(ErrorY) <= TRACKING_DEAD_ZONE_PIXEL)
 	{
 		SpeedY = 0;
-		Tracking_PIDReset(&Tracking_PidY);
+		PID_Reset(&Tracking_PidY);
 	}
 	else
 	{
-		SpeedY = Tracking_PIDUpdate(&Tracking_PidY, ErrorY);
+		SpeedY = Tracking_CalcPidSpeed(&Tracking_PidY, ErrorY);
 	}
 
 	SpeedX = Tracking_ApplyDirSign(SpeedX, TRACKING_MOTOR_X_DIR_SIGN);

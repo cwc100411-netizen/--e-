@@ -367,7 +367,7 @@
             <v6LangP>1</v6LangP>
             <VariousControls>
               <MiscControls>--no-multibyte-chars</MiscControls>
-              <Define>USE_STDPERIPH_DRIVER</Define>
+              <Define>USE_STDPERIPH_DRIVER,STM32F10X_MD</Define>
               <Undefine></Undefine>
               <IncludePath>.\Start;.\Library;.\User;.\System;.\Hardware;.\Hardware\tracking</IncludePath>
             </VariousControls>
@@ -692,6 +692,16 @@
               <FileType>5</FileType>
               <FilePath>.\System\Delay.h</FilePath>
             </File>
+            <File>
+              <FileName>Timer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\Timer.c</FilePath>
+            </File>
+            <File>
+              <FileName>Timer.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\Timer.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -751,6 +761,16 @@
               <FileName>Stepper.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\Hardware\Stepper.h</FilePath>
+            </File>
+            <File>
+              <FileName>pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\pid.c</FilePath>
+            </File>
+            <File>
+              <FileName>pid.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\pid.h</FilePath>
             </File>
             <File>
               <FileName>Tracking.c</FileName>
