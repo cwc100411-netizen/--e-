@@ -16,6 +16,7 @@
 #define TRACKING_QUAD_DEFAULT_SECTION 200
 #define TRACKING_QUAD_START_HOLD_COUNT 200
 #define TRACKING_QUAD_LOCK_FRAME_COUNT 5
+#define TRACKING_QUAD_SHRINK_PERCENT 4
 
 /* 如果实际电机正方向与云台输入正方向相反，把对应值改为 -1 */
 #define TRACKING_MOTOR_X_DIR_SIGN     1
@@ -133,6 +134,38 @@ static uint8_t Tracking_IsQuadrilateralValid(uint8_t X1, uint8_t Y1,
 }
 
 /**
+  * 函    数：计算目标点内缩偏移量
+  * 参    数：Value 原始数值
+  * 返 回 值：按固定比例缩小后的数值
+  */
+static int16_t Tracking_GetShrinkOffset(int16_t Value)
+{
+	int32_t Product;
+
+	Product = (int32_t)Value * TRACKING_QUAD_SHRINK_PERCENT;
+
+	/* 四舍五入，避免小比例收缩时误差全部被截断 */
+	if (Product >= 0)
+	{
+		return (int16_t)((Product + 50) / 100);
+	}
+
+	return (int16_t)(-((-Product + 50) / 100));
+}
+
+/* 根据当前坐标和相邻两个坐标，计算内缩后的单个坐标 */
+static uint8_t Tracking_ShrinkPixel(uint8_t Point, uint8_t Prev, uint8_t Next)
+{
+	int16_t Target;
+
+	Target = Point;
+	Target += Tracking_GetShrinkOffset((int16_t)Prev - (int16_t)Point);
+	Target += Tracking_GetShrinkOffset((int16_t)Next - (int16_t)Point);
+
+	return Tracking_ClampPixel(Target);
+}
+
+/**
   * 函    数：用串口收到的四个顶点更新四边形路径
   * 参    数：X1~Y4 四个顶点坐标
   * 返 回 值：无
@@ -143,14 +176,15 @@ static void Tracking_UpdateQuadrilateralPoints(uint8_t X1, uint8_t Y1,
                                                uint8_t X3, uint8_t Y3,
                                                uint8_t X4, uint8_t Y4)
 {
-	Tracking_QuadX[0] = X1;
-	Tracking_QuadY[0] = Y1;
-	Tracking_QuadX[1] = X2;
-	Tracking_QuadY[1] = Y2;
-	Tracking_QuadX[2] = X3;
-	Tracking_QuadY[2] = Y3;
-	Tracking_QuadX[3] = X4;
-	Tracking_QuadY[3] = Y4;
+	/* 外框角点沿相邻两条边向内收缩，让目标点落在内外框之间的黑色胶带区域 */
+	Tracking_QuadX[0] = Tracking_ShrinkPixel(X1, X4, X2);
+	Tracking_QuadY[0] = Tracking_ShrinkPixel(Y1, Y4, Y2);
+	Tracking_QuadX[1] = Tracking_ShrinkPixel(X2, X1, X3);
+	Tracking_QuadY[1] = Tracking_ShrinkPixel(Y2, Y1, Y3);
+	Tracking_QuadX[2] = Tracking_ShrinkPixel(X3, X2, X4);
+	Tracking_QuadY[2] = Tracking_ShrinkPixel(Y3, Y2, Y4);
+	Tracking_QuadX[3] = Tracking_ShrinkPixel(X4, X3, X1);
+	Tracking_QuadY[3] = Tracking_ShrinkPixel(Y4, Y3, Y1);
 }
 
 /**
@@ -416,14 +450,10 @@ void Tracking_SetQuadrilateral(int16_t X1, int16_t Y1,
                                int16_t X3, int16_t Y3,
                                int16_t X4, int16_t Y4)
 {
-	Tracking_QuadX[0] = Tracking_ClampPixel(X1);
-	Tracking_QuadY[0] = Tracking_ClampPixel(Y1);
-	Tracking_QuadX[1] = Tracking_ClampPixel(X2);
-	Tracking_QuadY[1] = Tracking_ClampPixel(Y2);
-	Tracking_QuadX[2] = Tracking_ClampPixel(X3);
-	Tracking_QuadY[2] = Tracking_ClampPixel(Y3);
-	Tracking_QuadX[3] = Tracking_ClampPixel(X4);
-	Tracking_QuadY[3] = Tracking_ClampPixel(Y4);
+	Tracking_UpdateQuadrilateralPoints(Tracking_ClampPixel(X1), Tracking_ClampPixel(Y1),
+	                                   Tracking_ClampPixel(X2), Tracking_ClampPixel(Y2),
+	                                   Tracking_ClampPixel(X3), Tracking_ClampPixel(Y3),
+	                                   Tracking_ClampPixel(X4), Tracking_ClampPixel(Y4));
 
 	Tracking_QuadEdge = 0;
 	Tracking_QuadStep = 0;
