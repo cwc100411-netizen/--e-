@@ -5,7 +5,7 @@ from maix import app, camera, display, err, pinmap, sys, time, uart
 CAM_W, CAM_H = 240, 240
 
 # LAB 阈值，参考 notebook 中的一号机 2.0 红色激光参数
-RED_THRESH =  [(0, 100, 10, 80, -30, 50)]
+RED_THRESH =  [(0, 100, 14, 51, -8, 17)]
 
 # LAB 阈值，参考 Maix 示例：先二值化黑色区域，再查找矩形
 BLACK_RECT_THRESH = [[0, 33, -100, 100, -100, 100]]

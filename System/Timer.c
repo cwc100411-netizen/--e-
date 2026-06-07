@@ -1,5 +1,6 @@
 #include "stm32f10x.h"                  // Device header
 #include "Timer.h"
+#include "Key.h"
 
 static volatile uint8_t Timer_FlagCount = 0;
 
@@ -70,6 +71,9 @@ void TIM4_IRQHandler(void)
 {
 	if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
 	{
+		/* 定时扫描按键，函数内部不能有阻塞延时 */
+		Key_Tick();
+
 		if (Timer_FlagCount < 255)
 		{
 			Timer_FlagCount++;
