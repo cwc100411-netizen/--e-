@@ -4,25 +4,28 @@
 #include "pid.h"
 
 /* 常用调试参数：后续调循迹速度和稳定性时优先改这里 */
-#define TRACKING_IMAGE_SIZE             240
-#define TRACKING_CENTER                 120
-#define TRACKING_DEAD_ZONE_PIXEL        1
-#define TRACKING_MIN_SPEED              60
-#define TRACKING_MAX_SPEED              500
-#define TRACKING_LOST_LIMIT             20
-#define TRACKING_QUAD_DEFAULT_SECTION   200
-#define TRACKING_QUAD_START_HOLD        200
-#define TRACKING_QUAD_LOCK_COUNT        5
-#define TRACKING_MIN_QUAD_AREA          100
+#define TRACKING_IMAGE_SIZE             240     /* 摄像头图像宽高，当前为 240x240 */
+#define TRACKING_CENTER                 120     /* 默认目标中心坐标 */
+#define TRACKING_DEAD_ZONE_PIXEL        1       /* 像素误差死区，误差小于等于该值时停止 */
+#define TRACKING_MIN_SPEED              60      /* 电机最小启动速度，单位 step/s */
+#define TRACKING_MAX_SPEED              500     /* 电机最大速度限制，单位 step/s */
+#define TRACKING_LOST_LIMIT             20      /* 连续丢包次数上限，超过后停止追踪 */
+#define TRACKING_QUAD_DEFAULT_SECTION   200     /* 四边形每条边默认分段数，越大循迹越慢 */
+#define TRACKING_QUAD_START_HOLD        200     /* 锁定黑框后原地等待的控制周期数 */
+#define TRACKING_QUAD_LOCK_COUNT        5       /* 连续收到有效黑框的帧数，达到后锁定 */
+#define TRACKING_MIN_QUAD_AREA          100     /* 有效四边形最小面积，过滤噪声点 */
+#define TRACKING_QUAD_SHRINK_SCALE      0.96f   /* 参考工程 SC1，黑框目标点向中心收缩 */
+#define TRACKING_QUAD_SHIFT_X           1.5f    /* 参考工程 shifting_x，收缩后 x 方向偏移 */
+#define TRACKING_QUAD_SHIFT_Y           1.5f    /* 参考工程 shifting_y，收缩后 y 方向偏移 */
 
 /* PID 参数：先只用 P，抖动明显时再小幅加 D */
-#define TRACKING_PID_KP                 3.0f
-#define TRACKING_PID_KI                 0.0f
-#define TRACKING_PID_KD                 0.0f
+#define TRACKING_PID_KP                 3.0f    /* 比例系数，越大响应越快，也更容易抖 */
+#define TRACKING_PID_KI                 0.0f    /* 积分系数，当前不使用 */
+#define TRACKING_PID_KD                 0.0f    /* 微分系数，抖动时可小幅增加 */
 
 /* 如果实际电机方向相反，把对应值改为 -1 */
-#define TRACKING_MOTOR_X_DIR_SIGN       1
-#define TRACKING_MOTOR_Y_DIR_SIGN       1
+#define TRACKING_MOTOR_X_DIR_SIGN       1       /* 水平轴方向修正，反向时改为 -1 */
+#define TRACKING_MOTOR_Y_DIR_SIGN       1       /* 竖直轴方向修正，反向时改为 -1 */
 
 typedef struct
 {
@@ -61,6 +64,7 @@ static void Tracking_SetMotorSpeed(int16_t SpeedX, int16_t SpeedY);
 static void Tracking_ReadPacket(Tracking_PointTypeDef *Laser, Tracking_PointTypeDef Quad[]);
 static void Tracking_ResetQuadProgress(uint16_t HoldCount);
 static void Tracking_SetQuadPoints(Tracking_PointTypeDef Quad[]);
+static void Tracking_ShrinkQuadPoints(Tracking_PointTypeDef Quad[]);
 static void Tracking_UpdateQuadTarget(void);
 static void Tracking_MoveQuadTarget(void);
 static uint8_t Tracking_ClampPixel(int16_t Value);
@@ -413,9 +417,31 @@ static void Tracking_SetQuadPoints(Tracking_PointTypeDef Quad[])
 {
 	uint8_t i;
 
+	Tracking_ShrinkQuadPoints(Quad);
 	for (i = 0; i < TRACKING_QUAD_POINT_NUM; i++)
 	{
 		Tracking_Quad[i] = Quad[i];
+	}
+}
+
+static void Tracking_ShrinkQuadPoints(Tracking_PointTypeDef Quad[])
+{
+	uint8_t i;
+	int16_t CenterX;
+	int16_t CenterY;
+	float ShrinkX;
+	float ShrinkY;
+
+	/* 参考工程公式：点 = 中心 + SC1 * (点 - 中心) + 偏移 */
+	CenterX = (Quad[0].X + Quad[1].X + Quad[2].X + Quad[3].X) / 4;
+	CenterY = (Quad[0].Y + Quad[1].Y + Quad[2].Y + Quad[3].Y) / 4;
+
+	for (i = 0; i < TRACKING_QUAD_POINT_NUM; i++)
+	{
+		ShrinkX = CenterX + TRACKING_QUAD_SHRINK_SCALE * (Quad[i].X - CenterX) + TRACKING_QUAD_SHIFT_X;
+		ShrinkY = CenterY + TRACKING_QUAD_SHRINK_SCALE * (Quad[i].Y - CenterY) + TRACKING_QUAD_SHIFT_Y;
+		Quad[i].X = Tracking_ClampPixel((int16_t)ShrinkX);
+		Quad[i].Y = Tracking_ClampPixel((int16_t)ShrinkY);
 	}
 }
 

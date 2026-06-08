@@ -708,6 +708,16 @@
           <GroupName>Hardware</GroupName>
           <Files>
             <File>
+              <FileName>AppRun.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\AppRun.c</FilePath>
+            </File>
+            <File>
+              <FileName>AppRun.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\AppRun.h</FilePath>
+            </File>
+            <File>
               <FileName>LED.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Hardware\LED.c</FilePath>
