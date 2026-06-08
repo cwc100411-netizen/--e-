@@ -411,8 +411,8 @@ void Tracking_Init(void)
 	Tracking_QuadY[3] = 180;
 
 	/* 先只使用 PD 控制，Ki 保持 0，调试稳定后再小幅增加 */
-	PID_Config(&Tracking_PidX, 2.0f, 0.0f, 0.3f);
-	PID_Config(&Tracking_PidY, 2.0f, 0.0f, 0.3f);
+	PID_Config(&Tracking_PidX, 3.0f, 0.0f, 0.0f);
+	PID_Config(&Tracking_PidY, 3.0f, 0.0f, 0.0f);
 
 	Stepper_StopBoth();
 }

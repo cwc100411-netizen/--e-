@@ -3,51 +3,64 @@
 #include "Key.h"
 #include "Timer.h"
 #include "Delay.h"
+#include "Serial.h"
+#include "Tracking.h"
 
-static void Square_OpenLoop_RunOnce(uint32_t XSteps, uint32_t YSteps)
+static void Rectangle_Tape_Tracking_Start(void)
 {
-    /* 第一条边：左上 -> 右上，电机1控制水平轴 */
-    Stepper_SetDir(STEPPER_MOTOR_1, STEPPER_DIR_CW);
-    Stepper_RunSteps(STEPPER_MOTOR_1, XSteps);
-    Delay_ms(100);
-
-    /* 第二条边：右上 -> 右下，电机2控制竖直轴 */
-    Stepper_SetDir(STEPPER_MOTOR_2, STEPPER_DIR_CW);
-    Stepper_RunSteps(STEPPER_MOTOR_2, YSteps);
-    Delay_ms(100);
-
-    /* 第三条边：右下 -> 左下 */
-    Stepper_SetDir(STEPPER_MOTOR_1, STEPPER_DIR_CCW);
-    Stepper_RunSteps(STEPPER_MOTOR_1, XSteps);
-    Delay_ms(100);
-
-    /* 第四条边：左下 -> 左上 */
-    Stepper_SetDir(STEPPER_MOTOR_2, STEPPER_DIR_CCW);
-    Stepper_RunSteps(STEPPER_MOTOR_2, YSteps);
-
+    /* 重新启动前先停止旧任务，避免电机沿旧速度继续运动 */
+    Tracking_Enable(0);
+    Tracking_EnableQuadrilateral(0);
     Stepper_StopBoth();
+
+    /* 使能两个电机，等待驱动和电机吸合稳定 */
+    Stepper_Enable(STEPPER_MOTOR_1);
+    Stepper_Enable(STEPPER_MOTOR_2);
+    Delay_ms(300);
+
+    /* 清掉等待期间积累的 10ms 定时标志 */
+    while (Timer_GetFlag())
+    {
+    }
+
+    /* 重新等待摄像头串口发送的矩形胶带黑框坐标 */
+    Tracking_ResetQuadrilateralLock();
+
+    /* 设置每条边分段数，数值越大循迹越慢，越小越快 */
+    Tracking_SetQuadrilateralSection(100);
+
+    /* 开启四边形循迹目标生成 */
+    Tracking_EnableQuadrilateral(1);
+
+    /* 开启闭环追踪 */
+    Tracking_Enable(1);
 }
 
 int main(void)
 {
-    uint32_t SquareXSteps = 500;   /* 水平方向步数，需要按实际屏幕标定 */
-    uint32_t SquareYSteps = 500;   /* 竖直方向步数，需要按实际屏幕标定 */
-    uint16_t PulseUs = 1000;        /* 速度参数，数值越小速度越快 */
-
     Stepper_Init();
     Key_Init();
     Timer_Init();
+    Serial_Init();
+    Tracking_Init();
 
-    Stepper_SetPulseUs(STEPPER_MOTOR_1, PulseUs);
-    Stepper_SetPulseUs(STEPPER_MOTOR_2, PulseUs);
+    /* 上电后默认不运动，等待按键启动 */
+    Tracking_EnableQuadrilateral(0);
+    Tracking_Enable(0);
     Stepper_StopBoth();
 
     while (1)
     {
-        /* PA0 按键由 TIM4 中断扫描，按下一次运行一圈开环矩形框 */
+        /* PA0 按下一次，开始使用摄像头识别到的矩形胶带黑框循迹 */
         if (Key_GetNum() == 1)
         {
-            Square_OpenLoop_RunOnce(SquareXSteps, SquareYSteps);
+            Rectangle_Tape_Tracking_Start();
+        }
+
+        /* TIM4 每 10ms 置位一次标志，主循环里执行追踪任务 */
+        if (Timer_GetFlag())
+        {
+            Tracking_Task();
         }
     }
 }

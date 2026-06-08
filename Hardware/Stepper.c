@@ -291,8 +291,10 @@ void Stepper_Init(void)
 	GPIO_ResetBits(STEPPER_STEP_GPIO, STEPPER1_STEP_PIN | STEPPER2_STEP_PIN);
 	Stepper_SetDir(STEPPER_MOTOR_1, STEPPER_DIR_CW);
 	Stepper_SetDir(STEPPER_MOTOR_2, STEPPER_DIR_CW);
-	Stepper_Enable(STEPPER_MOTOR_1);
-	Stepper_Enable(STEPPER_MOTOR_2);
+
+	/* 上电初始化后默认关闭驱动器，避免电机线圈立即吸合造成抖动 */
+	Stepper_Disable(STEPPER_MOTOR_1);
+	Stepper_Disable(STEPPER_MOTOR_2);
 }
 
 /**
@@ -502,6 +504,9 @@ void Stepper_RunSteps(uint8_t Motor, uint32_t StepNum)
 
 	/* PulseUs 表示高低电平各保持的时间，所以一个 PWM 周期为 2 * PulseUs */
 	PeriodUs = (uint32_t)PulseUs * 2;
+
+	/* 真正需要运动时再使能驱动器，避免上电后电机无指令抖动 */
+	Stepper_Enable(Motor);
 	Stepper_StartPwm(Motor, StepNum, PeriodUs);
 
 	if (Motor == STEPPER_MOTOR_2)
@@ -559,6 +564,16 @@ void Stepper_RunStepsBoth(uint32_t Motor1StepNum, uint32_t Motor2StepNum)
 	BasePeriodUs = (uint32_t)PulseUs * 2;
 	Motor1PeriodUs = BasePeriodUs;
 	Motor2PeriodUs = BasePeriodUs;
+
+	/* 固定步数运行前自动使能需要运动的电机 */
+	if (Motor1StepNum != 0)
+	{
+		Stepper_Enable(STEPPER_MOTOR_1);
+	}
+	if (Motor2StepNum != 0)
+	{
+		Stepper_Enable(STEPPER_MOTOR_2);
+	}
 
 	/* 两个电机步数不同时，少步数电机降低 PWM 频率，尽量让两个电机同时结束 */
 	if (Motor1StepNum != 0)
