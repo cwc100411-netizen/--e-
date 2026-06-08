@@ -7,11 +7,11 @@ void Key_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-	/* PA0 配置为上拉输入，按键按下时接地为低电平 */
+	/* PA0、PA2、PA4、PA6 配置为上拉输入，按键另一端接 GND，按下为低电平 */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_2 | GPIO_Pin_4 | GPIO_Pin_6;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 }
@@ -38,6 +38,18 @@ static uint8_t Key_GetState(void)
 	{
 		return 1;
 	}
+	if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_2) == 0)
+	{
+		return 2;
+	}
+	if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_4) == 0)
+	{
+		return 3;
+	}
+	if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6) == 0)
+	{
+		return 4;
+	}
 	return 0;
 }
 
@@ -58,7 +70,7 @@ void Key_Tick(void)
 		/* 检测松开到按下，按键稳定按下后立即形成一次事件 */
 		if (CurrState != 0 && PrevState == 0)
 		{
-			Key_Num = 1;
+			Key_Num = CurrState;
 		}
 	}
 }

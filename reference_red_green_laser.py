@@ -1,5 +1,10 @@
 from maix import app, camera, display, err, pinmap, sys, time, uart
 
+try:
+    from maix import image
+except Exception:
+    image = None
+
 
 # 图像尺寸，当前摄像头输出 240x240
 CAM_W, CAM_H = 240, 240
@@ -25,6 +30,22 @@ PRINT_PERIOD_MS = 200
 BAUDRATE = 115200
 FRAME_HEAD = 0xFF
 FRAME_TAIL = 0xFE
+
+
+def rgb_color(r, g, b):
+    # MaixCam 绘图更推荐使用 image.Color，旧版本不支持时再退回 RGB 元组
+    if image is not None:
+        try:
+            return image.Color.from_rgb(r, g, b)
+        except Exception:
+            pass
+    return (r, g, b)
+
+
+ROI_COLOR = rgb_color(255, 255, 0)
+RECT_COLOR = rgb_color(0, 0, 255)
+CORNER_COLOR = rgb_color(0, 255, 0)
+LASER_COLOR = rgb_color(255, 0, 0)
 
 
 def create_camera():
@@ -109,14 +130,26 @@ def blob_center(blob):
 
 
 def find_laser(img):
-    # 找最大红色色块作为激光点
+    # 只在 ROI 内找最大红色色块作为激光点
     try:
         blobs = img.find_blobs(
             RED_THRESH,
+            roi=RECT_ROI,
             merge=True,
             pixels_threshold=PIXELS_THRESHOLD,
             margin=MERGE_MARGIN,
         )
+    except TypeError:
+        try:
+            blobs = img.find_blobs(
+                RED_THRESH,
+                RECT_ROI,
+                merge=True,
+                pixels_threshold=PIXELS_THRESHOLD,
+                margin=MERGE_MARGIN,
+            )
+        except Exception:
+            return None
     except Exception:
         return None
 
@@ -129,6 +162,24 @@ def find_laser(img):
             best_blob = blob
 
     return blob_center(best_blob)
+
+
+def make_black_binary(img):
+    # 使用黑色胶带 LAB 阈值生成二值化图像，用于矩形识别
+    try:
+        return img.binary(BLACK_RECT_THRESH, copy=True)
+    except Exception as e:
+        print("black binary error:", e)
+        return img
+
+
+def make_laser_binary(img):
+    # 使用红色激光 LAB 阈值生成二值化图像，用于屏幕显示
+    try:
+        return img.binary(RED_THRESH, copy=True)
+    except Exception as e:
+        print("laser binary error:", e)
+        return img
 
 
 def rect_points(rect):
@@ -156,10 +207,9 @@ def rect_area(points):
     return area
 
 
-def find_black_rect(img):
-    # 在 ROI 内二值化并查找最大矩形黑框
+def find_black_rect(binary_img):
+    # 在 ROI 内从二值化图像查找最大矩形黑框
     try:
-        binary_img = img.binary(BLACK_RECT_THRESH, copy=True)
         rects = binary_img.find_rects(RECT_ROI, RECT_THRESHOLD)
     except Exception:
         return None
@@ -198,33 +248,53 @@ def send_tracking_to_uart(laser, rect):
     serial.write(frame)
 
 
+def draw_line(img, x1, y1, x2, y2, color, thickness=1):
+    # 兼容不同 MaixPy 版本的 draw_line 参数写法
+    try:
+        img.draw_line(x1, y1, x2, y2, color=color, thickness=thickness)
+    except TypeError:
+        img.draw_line(x1, y1, x2, y2, color, thickness)
+
+
+def draw_cross(img, x, y, color, size=6, thickness=1):
+    # 兼容不同 MaixPy 版本的 draw_cross 参数写法
+    try:
+        img.draw_cross(x, y, color=color, size=size, thickness=thickness)
+    except TypeError:
+        img.draw_cross(x, y, color, size, thickness)
+
+
 def draw_line_rect(img, roi, color):
-    # 画 ROI 区域
+    # 每帧画出 ROI 区域，方便在屏幕上确认识别范围
     x, y, w, h = roi
-    img.draw_line(x, y, x + w, y, color=color, thickness=1)
-    img.draw_line(x + w, y, x + w, y + h, color=color, thickness=1)
-    img.draw_line(x + w, y + h, x, y + h, color=color, thickness=1)
-    img.draw_line(x, y + h, x, y, color=color, thickness=1)
+    try:
+        img.draw_rect(x, y, w, h, color, 2)
+        return
+    except Exception:
+        pass
+
+    draw_line(img, x, y, x + w, y, color, thickness=2)
+    draw_line(img, x + w, y, x + w, y + h, color, thickness=2)
+    draw_line(img, x + w, y + h, x, y + h, color, thickness=2)
+    draw_line(img, x, y + h, x, y, color, thickness=2)
 
 
 def draw_debug(img, rect, laser):
     # 在屏幕中标注 ROI、四个角点和激光点
     try:
-        draw_line_rect(img, RECT_ROI, color=(255, 255, 0))
+        draw_line_rect(img, RECT_ROI, color=ROI_COLOR)
 
         if rect is not None:
             for i in range(4):
                 x1, y1 = rect[i]
-                x2, y2 = rect[(i + 1) % 4]
-                img.draw_line(x1, y1, x2, y2, color=(0, 0, 255), thickness=2)
-                img.draw_cross(x1, y1, color=(0, 255, 0), size=6, thickness=2)
+                draw_cross(img, x1, y1, color=CORNER_COLOR, size=6, thickness=2)
 
         if laser is not None:
             x, y = laser
-            img.draw_cross(x, y, color=(255, 0, 0), size=8, thickness=2)
-    except Exception:
-        # 绘图失败不影响识别和串口发送
-        pass
+            draw_cross(img, x, y, color=LASER_COLOR, size=6, thickness=2)
+    except Exception as e:
+        # 绘图失败不影响识别和串口发送，但需要打印原因方便定位
+        print("draw error:", e)
 
 
 def print_status(laser, fps):
@@ -242,10 +312,12 @@ last_rect = None
 
 while not app.need_exit():
     img = capture_image()
+    binary_img = make_black_binary(img)
+    laser_binary_img = make_laser_binary(img)
     frame_count += 1
 
     if rect_detect_count == 0:
-        rect = find_black_rect(img)
+        rect = find_black_rect(binary_img)
         if rect is not None:
             last_rect = rect
 
@@ -264,5 +336,5 @@ while not app.need_exit():
         last_print_ms = now_ms
 
     send_tracking_to_uart(laser, last_rect)
-    draw_debug(img, last_rect, laser)
-    show_image(img)
+    draw_debug(laser_binary_img, last_rect, laser)
+    show_image(laser_binary_img)
