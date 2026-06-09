@@ -7,12 +7,12 @@
 
 typedef enum
 {
-    APP_MODE_IDLE = 0,          /* 空闲 */
-    APP_MODE_EDGE_FAST,         /* 高速边线运动 */
-    APP_MODE_RECT_NORMAL,       /* 正着矩形胶带黑框循迹 */
-    APP_MODE_RECT_ANY,          /* 任意角度矩形胶带黑框循迹 */
-    APP_MODE_CIRCLE,            /* 边线内切圆运动 */
-    APP_MODE_DIGIT,             /* 识别数字顺序运动 */
+    APP_MODE_IDLE = 0,          /* 模式0：空闲 */
+    APP_MODE_EDGE_FAST = 1,     /* 模式1：高速边线运动 */
+    APP_MODE_RECT_NORMAL = 2,   /* 模式2：正着矩形胶带黑框循迹 */
+    APP_MODE_RECT_ANY = 3,      /* 模式3：任意角度矩形胶带黑框循迹 */
+    APP_MODE_CIRCLE = 4,        /* 模式4：边线内切圆运动 */
+    APP_MODE_DIGIT = 5,         /* 模式5：识别数字顺序运动 */
     APP_MODE_NUM
 } App_ModeTypeDef;
 

@@ -2,14 +2,20 @@
 #include "Stepper.h"
 #include "Timer.h"
 #include "Serial.h"
-#include "Delay.h"
+#include "Key.h"
+#include "OLED.h"
 #include "Tracking.h"
+#include "AppRun.h"
+
+static void Main_ShowMode(void);
 
 int main(void)
 {
     Stepper_Init();
-    Timer_Init();
     Serial_Init();
+    Key_Init();
+    OLED_Init();
+    Timer_Init();
     Tracking_Init();
 
     /* 上电先停止，避免电机误动作 */
@@ -17,32 +23,46 @@ int main(void)
     Tracking_EnableQuadrilateral(0);
     Stepper_StopBoth();
 
-    /* 使能两个步进电机 */
-    Stepper_Enable(STEPPER_MOTOR_1);
-    Stepper_Enable(STEPPER_MOTOR_2);
-    Delay_ms(300);
-
-    /* 清掉等待期间产生的定时标志 */
-    while (Timer_GetFlag())
-    {
-    }
-
-    /* 重新等待摄像头发送矩形黑框四个角点 */
-    Tracking_ResetQuadrilateralLock();
-
-    /* 设置矩形每条边分段数，数值越小走得越快 */
-    Tracking_SetQuadrilateralSection(10);
-
-    /* 开启矩形黑框循迹 */
-    Tracking_EnableQuadrilateral(1);
-    Tracking_Enable(1);
+    Main_ShowMode();
 
     while (1)
     {
-        /* TIM4 每 10ms 置位一次，周期调用循迹任务 */
-        if (Timer_GetFlag())
-        {
-            Tracking_Task();
-        }
+        App_Run();
+        Main_ShowMode();
+    }
+}
+
+static void Main_ShowMode(void)
+{
+    /* 当前 OLED 字库只支持常用 ASCII 字符，所以模式名使用英文 */
+    switch (App_GetMode())
+    {
+        case 0:
+            OLED_ShowString(1, 1, "mode:idle       ");
+            break;
+
+        case 1:
+            OLED_ShowString(1, 1, "mode:edge_fast  ");
+            break;
+
+        case 2:
+            OLED_ShowString(1, 1, "mode:rect_normal");
+            break;
+
+        case 3:
+            OLED_ShowString(1, 1, "mode:rect_any   ");
+            break;
+
+        case 4:
+            OLED_ShowString(1, 1, "mode:circle     ");
+            break;
+
+        case 5:
+            OLED_ShowString(1, 1, "mode:digit      ");
+            break;
+
+        default:
+            OLED_ShowString(1, 1, "mode:unknown    ");
+            break;
     }
 }
