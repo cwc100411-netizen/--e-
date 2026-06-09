@@ -16,7 +16,10 @@ typedef enum
     APP_MODE_NUM
 } App_ModeTypeDef;
 
-static App_ModeTypeDef App_Mode = APP_MODE_IDLE;
+/* 默认模式只改这里，注意不要设置为 APP_MODE_NUM */
+#define APP_DEFAULT_MODE    APP_MODE_RECT_NORMAL
+
+static App_ModeTypeDef App_Mode = APP_DEFAULT_MODE;
 
 static void App_StopAll(void);
 static void App_PrepareTracking(void);

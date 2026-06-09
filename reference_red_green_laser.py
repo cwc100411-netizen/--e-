@@ -173,6 +173,15 @@ def make_black_binary(img):
         return img
 
 
+def make_red_binary(img):
+    # 使用红色激光 LAB 阈值生成二值图，白色区域表示被识别为红色
+    try:
+        return img.binary(RED_THRESH, copy=True)
+    except Exception as e:
+        print("red binary error:", e)
+        return img
+
+
 def rect_points(rect):
     # find_rects 返回四个角点，转换成 [(x1,y1), ...]
     corners = get_attr(rect, "corners", None)
