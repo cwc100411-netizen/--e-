@@ -6,7 +6,7 @@
 /* 常用调试参数：后续调循迹速度和稳定性时优先改这里 */
 #define TRACKING_IMAGE_SIZE             240     /* 摄像头图像宽高，当前为 240x240 */
 #define TRACKING_CENTER                 120     /* 默认目标中心坐标 */
-#define TRACKING_DEAD_ZONE_PIXEL        1       /* 像素误差死区，误差小于等于该值时停止 */
+#define TRACKING_DEAD_ZONE_PIXEL        1       /* 像素误差死区，0 表示必须完全到点才停止 */
 #define TRACKING_MIN_SPEED              60      /* 电机最小启动速度，单位 step/s */
 #define TRACKING_MAX_SPEED              500     /* 电机最大速度限制，单位 step/s */
 #define TRACKING_LOST_LIMIT             20      /* 连续丢包次数上限，超过后停止追踪 */
@@ -14,14 +14,14 @@
 #define TRACKING_QUAD_START_HOLD        200     /* 锁定黑框后原地等待的控制周期数 */
 #define TRACKING_QUAD_LOCK_COUNT        5       /* 连续收到有效黑框的帧数，达到后锁定 */
 #define TRACKING_MIN_QUAD_AREA          100     /* 有效四边形最小面积，过滤噪声点 */
-#define TRACKING_QUAD_SHRINK_SCALE      0.96f   /* 参考工程 SC1，黑框目标点向中心收缩 */
-#define TRACKING_QUAD_SHIFT_X           1.5f    /* 参考工程 shifting_x，收缩后 x 方向偏移 */
-#define TRACKING_QUAD_SHIFT_Y           1.5f    /* 参考工程 shifting_y，收缩后 y 方向偏移 */
+#define TRACKING_QUAD_SHRINK_SCALE      1.0f   /* 参考工程 SC1，黑框目标点向中心收缩 */
+#define TRACKING_QUAD_SHIFT_X           0.0f    /* 参考工程 shifting_x，收缩后 x 方向偏移 */
+#define TRACKING_QUAD_SHIFT_Y           0.0f    /* 参考工程 shifting_y，收缩后 y 方向偏移 */
 
 /* PID 参数：先只用 P，抖动明显时再小幅加 D */
-#define TRACKING_PID_KP                 3.0f    /* 比例系数，越大响应越快，也更容易抖 */
+#define TRACKING_PID_KP                 1.0f    /* 比例系数，越大响应越快，也更容易抖 */
 #define TRACKING_PID_KI                 0.0f    /* 积分系数，当前不使用 */
-#define TRACKING_PID_KD                 0.0f    /* 微分系数，抖动时可小幅增加 */
+#define TRACKING_PID_KD                 0.3f    /* 微分系数，抖动时可小幅增加 */
 
 /* 如果实际电机方向相反，把对应值改为 -1 */
 #define TRACKING_MOTOR_X_DIR_SIGN       1       /* 水平轴方向修正，反向时改为 -1 */
@@ -39,25 +39,25 @@ enum
 	TRACKING_IMAGE_MAX = TRACKING_IMAGE_SIZE - 1
 };
 
-static PID_TypeDef Tracking_PidX;
-static PID_TypeDef Tracking_PidY;
+static PID_TypeDef Tracking_PidX;                         /* 水平轴 PID 控制器 */
+static PID_TypeDef Tracking_PidY;                         /* 竖直轴 PID 控制器 */
 
-static Tracking_PointTypeDef Tracking_Target;
-static Tracking_PointTypeDef Tracking_Laser;
-static Tracking_PointTypeDef Tracking_Quad[TRACKING_QUAD_POINT_NUM];
+static Tracking_PointTypeDef Tracking_Target;             /* 当前追踪目标坐标 */
+static Tracking_PointTypeDef Tracking_Laser;              /* 最近一次激光点坐标 */
+static Tracking_PointTypeDef Tracking_Quad[TRACKING_QUAD_POINT_NUM]; /* 四边形循迹顶点坐标 */
 
-static uint8_t Tracking_LaserValid;
-static uint8_t Tracking_EnableFlag;
-static uint8_t Tracking_QuadEnableFlag;
-static uint8_t Tracking_QuadLocked;
-static uint8_t Tracking_QuadLockCount;
-static uint8_t Tracking_QuadEdge;
-static uint16_t Tracking_NoPacketCount;
-static uint16_t Tracking_QuadSection;
-static uint16_t Tracking_QuadStep;
-static uint16_t Tracking_QuadHoldCount;
-static int16_t Tracking_LastSpeedX;
-static int16_t Tracking_LastSpeedY;
+static uint8_t Tracking_LaserValid;                       /* 激光点坐标有效标志 */
+static uint8_t Tracking_EnableFlag;                       /* 追踪功能使能标志 */
+static uint8_t Tracking_QuadEnableFlag;                   /* 四边形循迹使能标志 */
+static uint8_t Tracking_QuadLocked;                       /* 四边形顶点锁定标志 */
+static uint8_t Tracking_QuadLockCount;                    /* 连续有效四边形帧计数 */
+static uint8_t Tracking_QuadEdge;                         /* 当前正在循迹的边序号 */
+static uint16_t Tracking_NoPacketCount;                   /* 连续未收到数据包计数 */
+static uint16_t Tracking_QuadSection;                     /* 每条边的插值分段数 */
+static uint16_t Tracking_QuadStep;                        /* 当前边上的插值步数 */
+static uint16_t Tracking_QuadHoldCount;                   /* 锁定后原地等待计数 */
+static int16_t Tracking_LastSpeedX;                       /* 上一次水平电机速度 */
+static int16_t Tracking_LastSpeedY;                       /* 上一次竖直电机速度 */
 
 static void Tracking_StopAndReset(void);
 static void Tracking_SetMotorSpeed(int16_t SpeedX, int16_t SpeedY);
@@ -70,6 +70,7 @@ static void Tracking_MoveQuadTarget(void);
 static uint8_t Tracking_ClampPixel(int16_t Value);
 static uint8_t Tracking_IsPointValid(Tracking_PointTypeDef Point);
 static uint8_t Tracking_IsQuadValid(Tracking_PointTypeDef Quad[]);
+static uint8_t Tracking_IsTargetReached(int16_t ErrorX, int16_t ErrorY);
 static int16_t Tracking_CalcAxisSpeed(PID_TypeDef *Pid, int16_t Error);
 
 /**
@@ -208,7 +209,11 @@ void Tracking_Task(void)
 	}
 
 	Tracking_SetMotorSpeed(SpeedX, SpeedY);
-	Tracking_MoveQuadTarget();
+	/* 只有激光到达当前目标点附近，才推进到下一个插值目标点 */
+	if (Tracking_IsTargetReached(ErrorX, ErrorY))
+	{
+		Tracking_MoveQuadTarget();
+	}
 }
 
 /**
@@ -559,6 +564,24 @@ static uint8_t Tracking_IsQuadValid(Tracking_PointTypeDef Quad[])
 		return 0;
 	}
 	return 1;
+}
+
+static uint8_t Tracking_IsTargetReached(int16_t ErrorX, int16_t ErrorY)
+{
+	if (ErrorX < 0)
+	{
+		ErrorX = -ErrorX;
+	}
+	if (ErrorY < 0)
+	{
+		ErrorY = -ErrorY;
+	}
+
+	if ((ErrorX <= TRACKING_DEAD_ZONE_PIXEL) && (ErrorY <= TRACKING_DEAD_ZONE_PIXEL))
+	{
+		return 1;
+	}
+	return 0;
 }
 
 static int16_t Tracking_CalcAxisSpeed(PID_TypeDef *Pid, int16_t Error)

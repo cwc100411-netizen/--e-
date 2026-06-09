@@ -10,14 +10,14 @@ except Exception:
 CAM_W, CAM_H = 240, 240
 
 # ROI 区域：[x, y, w, h]，只在这个区域内找矩形黑框，可按实际画面调整
-RECT_ROI = [45, 35, 175, 175]
+RECT_ROI = [52, 48, 161, 159]
 
 # 红色激光和黑色胶带阈值
-RED_THRESH = [(0, 100, 14, 51, -8, 17)]
+RED_THRESH =  [(0, 100, 14, 51, -8, 17)]
 BLACK_RECT_THRESH = [[0, 33, -100, 100, -100, 100]]
 
 # 黑框和激光识别参数
-RECT_THRESHOLD = 10000
+RECT_THRESHOLD = 8000
 RECT_DETECT_INTERVAL = 3
 PIXELS_THRESHOLD = 2
 MERGE_MARGIN = 3
@@ -173,15 +173,6 @@ def make_black_binary(img):
         return img
 
 
-def make_laser_binary(img):
-    # 使用红色激光 LAB 阈值生成二值化图像，用于屏幕显示
-    try:
-        return img.binary(RED_THRESH, copy=True)
-    except Exception as e:
-        print("laser binary error:", e)
-        return img
-
-
 def rect_points(rect):
     # find_rects 返回四个角点，转换成 [(x1,y1), ...]
     corners = get_attr(rect, "corners", None)
@@ -313,7 +304,6 @@ last_rect = None
 while not app.need_exit():
     img = capture_image()
     binary_img = make_black_binary(img)
-    laser_binary_img = make_laser_binary(img)
     frame_count += 1
 
     if rect_detect_count == 0:
@@ -336,5 +326,5 @@ while not app.need_exit():
         last_print_ms = now_ms
 
     send_tracking_to_uart(laser, last_rect)
-    draw_debug(laser_binary_img, last_rect, laser)
-    show_image(laser_binary_img)
+    draw_debug(img, last_rect, laser)
+    show_image(img)
