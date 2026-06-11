@@ -13,6 +13,10 @@ static volatile uint32_t Stepper1_CurrentStepNum = 0;
 static volatile uint32_t Stepper2_CurrentStepNum = 0;
 static volatile uint8_t Stepper1_Busy = 0;
 static volatile uint8_t Stepper2_Busy = 0;
+static volatile uint8_t Stepper1_Continuous = 0;
+static volatile uint8_t Stepper2_Continuous = 0;
+static uint8_t Stepper1_ContinuousDir = STEPPER_DIR_CW;
+static uint8_t Stepper2_ContinuousDir = STEPPER_DIR_CW;
 
 /**
   * 函    数：限制 PWM 周期范围
@@ -92,12 +96,14 @@ static void Stepper_StopPwm(uint8_t Motor)
 
 	if (Motor == STEPPER_MOTOR_2)
 	{
+		Stepper2_Continuous = 0;
 		Stepper2_Busy = 0;
 		Stepper2_TargetStepNum = 0;
 		Stepper2_CurrentStepNum = 0;
 	}
 	else
 	{
+		Stepper1_Continuous = 0;
 		Stepper1_Busy = 0;
 		Stepper1_TargetStepNum = 0;
 		Stepper1_CurrentStepNum = 0;
@@ -187,6 +193,40 @@ static void Stepper_StartContinuousPwm(uint8_t Motor, uint32_t PeriodUs)
 	TIM_SetCounter(TIMx, 0);
 	TIM_ClearITPendingBit(TIMx, TIM_IT_Update);
 
+	TIM_ITConfig(TIMx, TIM_IT_Update, DISABLE);
+	TIM_Cmd(TIMx, ENABLE);
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		Stepper2_Continuous = 1;
+	}
+	else
+	{
+		Stepper1_Continuous = 1;
+	}
+}
+
+/**
+  * 函    数：连续速度模式下只更新 PWM 周期
+  * 说    明：方向不变时使用，避免每次调速都停止再启动 PWM
+  */
+static void Stepper_UpdateContinuousPwm(uint8_t Motor, uint32_t PeriodUs)
+{
+	TIM_TypeDef *TIMx;
+	uint16_t TimerPeriodUs;
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		TIMx = STEPPER2_PWM_TIM;
+	}
+	else
+	{
+		TIMx = STEPPER1_PWM_TIM;
+	}
+
+	TimerPeriodUs = Stepper_LimitPeriodUs(PeriodUs);
+	TIM_SetAutoreload(TIMx, TimerPeriodUs - 1);
+	TIM_SetCompare2(TIMx, TimerPeriodUs / 2);
 	TIM_ITConfig(TIMx, TIM_IT_Update, DISABLE);
 	TIM_Cmd(TIMx, ENABLE);
 }
@@ -445,6 +485,9 @@ void Stepper_SetSpeed(uint8_t Motor, int16_t Speed)
 {
 	uint32_t SpeedAbs;
 	uint32_t PeriodUs;
+	uint8_t Dir;
+	uint8_t IsContinuous;
+	uint8_t LastDir;
 
 	if (Speed == 0)
 	{
@@ -452,27 +495,48 @@ void Stepper_SetSpeed(uint8_t Motor, int16_t Speed)
 		return;
 	}
 
-	/* 改变方向前先停止 STEP，避免方向建立时间内继续输出脉冲 */
-	Stepper_StopPwm(Motor);
-
 	if (Speed > 0)
 	{
-		Stepper_SetDir(Motor, STEPPER_DIR_CW);
+		Dir = STEPPER_DIR_CW;
 		SpeedAbs = (uint32_t)Speed;
 	}
 	else
 	{
-		Stepper_SetDir(Motor, STEPPER_DIR_CCW);
-		SpeedAbs = (uint32_t)(0 - Speed);
-	}
-
-	if (SpeedAbs == 0)
-	{
-		Stepper_StopPwm(Motor);
-		return;
+		Dir = STEPPER_DIR_CCW;
+		SpeedAbs = (uint32_t)(0 - (int32_t)Speed);
 	}
 
 	PeriodUs = (1000000UL + SpeedAbs / 2) / SpeedAbs;
+
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		IsContinuous = Stepper2_Continuous;
+		LastDir = Stepper2_ContinuousDir;
+	}
+	else
+	{
+		IsContinuous = Stepper1_Continuous;
+		LastDir = Stepper1_ContinuousDir;
+	}
+
+	if ((IsContinuous != 0) && (LastDir == Dir))
+	{
+		Stepper_Enable(Motor);
+		Stepper_UpdateContinuousPwm(Motor, PeriodUs);
+		return;
+	}
+
+	/* 只有方向变化或首次启动时才停止 PWM，给 DIR 留建立时间。 */
+	Stepper_StopPwm(Motor);
+	Stepper_SetDir(Motor, Dir);
+	if (Motor == STEPPER_MOTOR_2)
+	{
+		Stepper2_ContinuousDir = Dir;
+	}
+	else
+	{
+		Stepper1_ContinuousDir = Dir;
+	}
 	Stepper_Enable(Motor);
 	Stepper_StartContinuousPwm(Motor, PeriodUs);
 }

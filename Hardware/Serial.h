@@ -5,8 +5,15 @@
 
 #define SERIAL_RX_PACKET_LENGTH 10
 
+/* 新增：区分摄像头发来的包类型，避免数字目标包和激光坐标包混在一起 */
+#define SERIAL_PACKET_TYPE_NONE          0
+#define SERIAL_PACKET_TYPE_TRACKING      1
+#define SERIAL_PACKET_TYPE_DIGIT_TARGETS 2
+
 extern uint8_t Serial_TxPacket[];
 extern volatile uint8_t Serial_RxPacket[];
+extern volatile uint8_t Serial_RxLength;
+extern volatile uint8_t Serial_RxType;
 
 void Serial_Init(void);
 void Serial_SendByte(uint8_t Byte);

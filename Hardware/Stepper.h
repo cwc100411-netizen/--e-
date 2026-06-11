@@ -14,10 +14,10 @@
 #define STEPPER_DIR_EN_GPIO_RCC       RCC_APB2Periph_GPIOB
 #define STEPPER_DIR_EN_GPIO           GPIOB
 
-/* 电机1引脚：PA1 STEP(TIM2_CH2)，PB7 DIR，PB8 EN */
+/* 电机1引脚：PA1 STEP(TIM2_CH2)，PB4 DIR，PB7 EN */
 #define STEPPER1_STEP_PIN             GPIO_Pin_1
 #define STEPPER1_DIR_PIN              GPIO_Pin_4
-#define STEPPER1_EN_PIN               GPIO_Pin_8
+#define STEPPER1_EN_PIN               GPIO_Pin_7
 
 /* 电机2引脚：PA7 STEP(TIM3_CH2)，PB1 DIR，PB3 EN */
 #define STEPPER2_STEP_PIN             GPIO_Pin_7

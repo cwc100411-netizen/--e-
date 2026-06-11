@@ -33,6 +33,37 @@ void Tracking_Enable(uint8_t Enable);
 void Tracking_EnableQuadrilateral(uint8_t Enable);
 
 /**
+  * 函    数：读取四边形循迹是否已经完成一圈
+  * 参    数：无
+  * 返 回 值：1 表示已完成，0 表示未完成
+  */
+uint8_t Tracking_IsQuadrilateralFinished(void);
+
+/**
+  * 函    数：开启或关闭圆形循迹目标生成
+  * 参    数：Enable 1 表示开启，0 表示关闭
+  * 返 回 值：无
+  */
+void Tracking_EnableCircle(uint8_t Enable);
+
+/**
+  * 函    数：开启或关闭数字顺序击打
+  * 参    数：Enable 1 表示开启，0 表示关闭
+  * 返 回 值：无
+  * 说    明：新增功能，等待 MaixCam 发送 1~5 中心点后按顺序击打
+  */
+void Tracking_EnableDigit(uint8_t Enable);
+
+/**
+  * 函    数：设置圆形循迹参数
+  * 参    数：CenterX, CenterY 圆心坐标
+  * 参    数：StartX, StartY 圆上的起始点坐标
+  * 返 回 值：无
+  * 说    明：支持任意圆上一点作为起点，例如圆心(133,130)、起点(131,56)
+  */
+void Tracking_SetCircle(int16_t CenterX, int16_t CenterY, int16_t StartX, int16_t StartY);
+
+/**
   * 函    数：设置四边形每条边的分段数
   * 参    数：Section 每条边分成多少小段，数值越大循迹越慢
   * 返 回 值：无

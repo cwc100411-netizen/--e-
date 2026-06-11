@@ -6,6 +6,8 @@
 uint8_t Serial_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
 volatile uint8_t Serial_RxPacket[SERIAL_RX_PACKET_LENGTH];	//定义接收数据包数组，格式：激光 x,y + 四边形 4 个顶点 x,y
 volatile uint8_t Serial_RxFlag;			//定义接收数据包标志位
+volatile uint8_t Serial_RxLength;			//接收到的数据长度，2表示只有激光点，10表示激光点+四边形顶点
+volatile uint8_t Serial_RxType;			//新增：接收到的数据包类型，区分激光包和数字目标包
 
 /**
   * 函    数：串口初始化
@@ -205,46 +207,63 @@ uint8_t Serial_GetRxFlag(void)
   */
 void USART1_IRQHandler(void)
 {
-	static uint8_t RxState = 0;		//定义表示当前状态机状态的静态变量
-	static uint8_t pRxPacket = 0;	//定义表示当前接收数据位置的静态变量
-	if (USART_GetITStatus(USART1, USART_IT_RXNE) == SET)		//判断是否是USART1的接收事件触发的中断
+	static uint8_t RxState = 0;
+	static uint8_t pRxPacket = 0;
+	static uint8_t RxType = SERIAL_PACKET_TYPE_NONE;
+	if (USART_GetITStatus(USART1, USART_IT_RXNE) == SET)
 	{
-		uint8_t RxData = USART_ReceiveData(USART1);				//读取数据寄存器，存放在接收的数据变量
-		
-		/*使用状态机的思路，依次处理数据包的不同部分*/
-		
-		/*当前状态为0，接收数据包包头*/
+		uint8_t RxData = USART_ReceiveData(USART1);
+
+		/* 新增：支持两类包头。
+		   FF x y FE：实时激光点；
+		   FF 后跟 10 字节 FE：激光点 + 黑框四顶点；
+		   FD 后跟 10 字节 FE：数字 1~5 的中心点。 */
 		if (RxState == 0)
 		{
-			if (RxData == 0xFF)			//如果数据确实是包头
+			if (RxData == 0xFF)
 			{
-				RxState = 1;			//置下一个状态
-				pRxPacket = 0;			//数据包的位置归零
+				RxState = 1;
+				pRxPacket = 0;
+				RxType = SERIAL_PACKET_TYPE_TRACKING;
+			}
+			else if (RxData == 0xFD)
+			{
+				RxState = 1;
+				pRxPacket = 0;
+				RxType = SERIAL_PACKET_TYPE_DIGIT_TARGETS;
 			}
 		}
-		/*当前状态为1，接收数据包数据*/
-		else if (RxState == 1)
+		else
 		{
-			Serial_RxPacket[pRxPacket] = RxData;	//将数据存入数据包数组的指定位置
-			pRxPacket ++;				//数据包的位置自增
-			if (pRxPacket >= SERIAL_RX_PACKET_LENGTH)	//如果收够一帧坐标数据
+			if (RxData == 0xFE)
 			{
-				RxState = 2;			//置下一个状态
+				if (((RxType == SERIAL_PACKET_TYPE_TRACKING) &&
+				     ((pRxPacket == 2) || (pRxPacket == SERIAL_RX_PACKET_LENGTH))) ||
+				    ((RxType == SERIAL_PACKET_TYPE_DIGIT_TARGETS) &&
+				     (pRxPacket == SERIAL_RX_PACKET_LENGTH)))
+				{
+					Serial_RxLength = pRxPacket;
+					Serial_RxType = RxType;
+					Serial_RxFlag = 1;
+				}
+				RxState = 0;
+				pRxPacket = 0;
+				RxType = SERIAL_PACKET_TYPE_NONE;
 			}
-		}
-		/*当前状态为2，接收数据包包尾*/
-		else if (RxState == 2)
-		{
-			if (RxData == 0xFE)			//如果数据确实是包尾部
+			else if (pRxPacket < SERIAL_RX_PACKET_LENGTH)
 			{
-				RxState = 0;			//状态归0
-				Serial_RxFlag = 1;		//接收数据包标志位置1，成功接收一个数据包
+				Serial_RxPacket[pRxPacket] = RxData;
+				pRxPacket++;
 			}
 			else
 			{
-				RxState = 0;			//包尾错误，放弃当前帧并重新等待包头
+				RxState = 0;
+				pRxPacket = 0;
+				RxType = SERIAL_PACKET_TYPE_NONE;
 			}
 		}
-		USART_ClearITPendingBit(USART1, USART_IT_RXNE);		//清除标志位
+
+		USART_ClearITPendingBit(USART1, USART_IT_RXNE);
+		return;
 	}
 }

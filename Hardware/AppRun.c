@@ -33,6 +33,8 @@ static void App_StopAll(void)
 {
     Tracking_Enable(0);
     Tracking_EnableQuadrilateral(0);
+    Tracking_EnableCircle(0);
+    Tracking_EnableDigit(0);
     Stepper_StopBoth();
 }
 
@@ -73,11 +75,11 @@ static void App_StartCurrentMode(void)
             break;
 
         case APP_MODE_RECT_NORMAL:
-            App_StartRectangleTracking(100);
+            App_StartRectangleTracking(20);
             break;
 
         case APP_MODE_RECT_ANY:
-            App_StartRectangleTracking(100);
+            App_StartRectangleTracking(20);
             break;
 
         case APP_MODE_CIRCLE:
@@ -164,5 +166,14 @@ void App_Run(void)
     if (Timer_GetFlag())
     {
         Tracking_Task();
+        if (((App_Mode == APP_MODE_EDGE_FAST) ||
+             (App_Mode == APP_MODE_RECT_NORMAL) ||
+             (App_Mode == APP_MODE_RECT_ANY)) &&
+            (Tracking_IsQuadrilateralFinished() != 0))
+        {
+            /* 四边形循迹完整跑完一圈后，回到空闲模式并停机 */
+            App_Mode = APP_MODE_IDLE;
+            App_StopAll();
+        }
     }
 }
