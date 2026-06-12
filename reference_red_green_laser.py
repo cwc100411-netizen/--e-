@@ -1,9 +1,5 @@
-from maix import app, camera, display, err, pinmap, sys, time, uart
-
-try:
-    from maix import image
-except Exception:
-    image = None
+from maix import app, camera, display, err, image, pinmap, sys, time, uart
+import cv2
 
 
 # 图像尺寸，当前摄像头输出 240x240
@@ -12,12 +8,14 @@ CAM_W, CAM_H = 240, 240
 # ROI 区域：[x, y, w, h]，只在这个区域内找矩形黑框，可按实际画面调整
 RECT_ROI = [52, 48, 161, 159]
 
-# 红色激光和黑色胶带阈值
+# 红色激光阈值
 RED_THRESH =  [(0, 100, 14, 51, -8, 17)]
-BLACK_RECT_THRESH = [[0, 33, -100, 100, -100, 100]]
 
 # 黑框和激光识别参数
-RECT_THRESHOLD = 8000
+RECT_MIN_AREA = 4000
+RECT_APPROX_RATE = 0.02
+RECT_CANNY_LOW = 70
+RECT_CANNY_HIGH = 180
 RECT_DETECT_INTERVAL = 3
 PIXELS_THRESHOLD = 2
 MERGE_MARGIN = 3
@@ -32,20 +30,12 @@ FRAME_HEAD = 0xFF
 FRAME_TAIL = 0xFE
 
 
-def rgb_color(r, g, b):
-    # MaixCam 绘图更推荐使用 image.Color，旧版本不支持时再退回 RGB 元组
-    if image is not None:
-        try:
-            return image.Color.from_rgb(r, g, b)
-        except Exception:
-            pass
-    return (r, g, b)
+ROI_COLOR = image.COLOR_YELLOW
+CORNER_COLOR = image.COLOR_GREEN
+LASER_COLOR = image.COLOR_RED
 
-
-ROI_COLOR = rgb_color(255, 255, 0)
-RECT_COLOR = rgb_color(0, 0, 255)
-CORNER_COLOR = rgb_color(0, 255, 0)
-LASER_COLOR = rgb_color(255, 0, 0)
+# 参考工程使用 3x3 闭运算连接矩形边缘，减少断线造成的漏检
+RECT_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
 
 def create_camera():
@@ -164,27 +154,6 @@ def find_laser(img):
     return blob_center(best_blob)
 
 
-def make_black_binary(img):
-    # 使用黑色胶带 LAB 阈值生成二值化图像，用于矩形识别
-    try:
-        return img.binary(BLACK_RECT_THRESH, copy=True)
-    except Exception as e:
-        print("black binary error:", e)
-        return img
-
-
-def rect_points(rect):
-    # find_rects 返回四个角点，转换成 [(x1,y1), ...]
-    corners = get_attr(rect, "corners", None)
-    if corners is None or len(corners) < 4:
-        return None
-
-    points = []
-    for i in range(4):
-        points.append((int(corners[i][0]), int(corners[i][1])))
-    return points
-
-
 def rect_area(points):
     # 用四边形面积筛掉小噪声矩形
     area = 0
@@ -198,19 +167,46 @@ def rect_area(points):
     return area
 
 
-def find_black_rect(binary_img):
-    # 在 ROI 内从二值化图像查找最大矩形黑框
+def find_contours(edges):
+    # 兼容不同 OpenCV 版本的 findContours 返回值
+    result = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    if len(result) == 3:
+        return result[1]
+    return result[0]
+
+
+def find_black_rect(img):
+    # 参考工程方法：灰度化、模糊、闭运算、Canny 边缘，再用轮廓拟合找四边形
+    x, y, w, h = RECT_ROI
+
     try:
-        rects = binary_img.find_rects(RECT_ROI, RECT_THRESHOLD)
-    except Exception:
+        img_cv = image.image2cv(img, copy=False)
+        roi_cv = img_cv[y:y + h, x:x + w]
+        gray = cv2.cvtColor(roi_cv, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+        gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, RECT_KERNEL)
+        edges = cv2.Canny(gray, RECT_CANNY_LOW, RECT_CANNY_HIGH)
+        contours = find_contours(edges)
+    except Exception as e:
+        print("rect cv error:", e)
         return None
 
     best_points = None
     best_area = 0
-    for rect in rects:
-        points = rect_points(rect)
-        if points is None:
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < RECT_MIN_AREA:
             continue
+
+        epsilon = RECT_APPROX_RATE * cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+        if len(approx) != 4:
+            continue
+
+        points = []
+        for point in approx:
+            px, py = point.ravel()
+            points.append((int(px) + x, int(py) + y))
 
         area = rect_area(points)
         if area > best_area:
@@ -303,11 +299,10 @@ last_rect = None
 
 while not app.need_exit():
     img = capture_image()
-    binary_img = make_black_binary(img)
     frame_count += 1
 
     if rect_detect_count == 0:
-        rect = find_black_rect(binary_img)
+        rect = find_black_rect(img)
         if rect is not None:
             last_rect = rect
 

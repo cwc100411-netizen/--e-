@@ -36,35 +36,50 @@ int main(void)
 
 static void Main_ShowMode(void)
 {
-    /* 当前 OLED 字库只支持常用 ASCII 字符，所以模式名使用英文 */
-    switch (App_GetMode())
+    /* 当前模式名继续使用英文，方便保持原来的显示内容 */
+    uint8_t Mode;
+    static uint8_t LastMode = 0xFF;
+
+    Mode = App_GetMode();
+    if (Mode == LastMode)
+    {
+        return;
+    }
+    LastMode = Mode;
+
+    /* 新版 OLED 库先写入显存，最后必须调用 OLED_Update 才会刷新到屏幕 */
+    OLED_Clear();
+
+    switch (Mode)
     {
         case 0:
-            OLED_ShowString(1, 1, "mode:idle       ");
+            OLED_ShowString(0, 0, "mode:idle       ", OLED_8X16);
             break;
 
         case 1:
-            OLED_ShowString(1, 1, "mode:edge_fast  ");
+            OLED_ShowString(0, 0, "mode:edge_fast  ", OLED_8X16);
             break;
 
         case 2:
-            OLED_ShowString(1, 1, "mode:rect_normal");
+            OLED_ShowString(0, 0, "mode:rect_normal", OLED_8X16);
             break;
 
         case 3:
-            OLED_ShowString(1, 1, "mode:rect_any   ");
+            OLED_ShowString(0, 0, "mode:rect_any   ", OLED_8X16);
             break;
 
         case 4:
-            OLED_ShowString(1, 1, "mode:circle     ");
+            OLED_ShowString(0, 0, "mode:circle     ", OLED_8X16);
             break;
 
         case 5:
-            OLED_ShowString(1, 1, "mode:digit      ");
+            OLED_ShowString(0, 0, "mode:digit      ", OLED_8X16);
             break;
 
         default:
-            OLED_ShowString(1, 1, "mode:unknown    ");
+            OLED_ShowString(0, 0, "mode:unknown    ", OLED_8X16);
             break;
     }
+
+    OLED_Update();
 }
