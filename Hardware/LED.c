@@ -1,4 +1,5 @@
 #include "stm32f10x.h"                  // Device header
+#include "LED.h"
 
 /**
   * 函    数：LED初始化
@@ -92,5 +93,62 @@ void LED2_Turn(void)
 	else                                               		//否则，即当前引脚输出高电平
 	{                                                  
 		GPIO_ResetBits(GPIOA, GPIO_Pin_2);             		//则设置PA2引脚为低电平
+	}
+}
+
+/**
+  * 函    数：激光初始化
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：PB12 高电平使能激光，初始化后默认关闭
+  */
+void Laser_Init(void)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);		//开启GPIOB的时钟
+
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);						//将PB12初始化为推挽输出
+
+	Laser_OFF();												//上电默认关闭激光，避免误亮
+}
+
+/**
+  * 函    数：开启激光
+  * 参    数：无
+  * 返 回 值：无
+  */
+void Laser_ON(void)
+{
+	GPIO_SetBits(GPIOB, GPIO_Pin_12);							//PB12输出高电平，激光开启
+}
+
+/**
+  * 函    数：关闭激光
+  * 参    数：无
+  * 返 回 值：无
+  */
+void Laser_OFF(void)
+{
+	GPIO_ResetBits(GPIOB, GPIO_Pin_12);							//PB12输出低电平，激光关闭
+}
+
+/**
+  * 函    数：设置激光状态
+  * 参    数：State 1开启，0关闭
+  * 返 回 值：无
+  */
+void Laser_Set(uint8_t State)
+{
+	if (State != 0)
+	{
+		Laser_ON();
+	}
+	else
+	{
+		Laser_OFF();
 	}
 }

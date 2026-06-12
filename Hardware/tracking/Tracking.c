@@ -11,7 +11,7 @@
 #define TRACKING_MAX_SPEED              500     /* 电机最大速度限制，单位 step/s */
 #define TRACKING_LOST_LIMIT             20      /* 连续丢包次数上限，超过后停止追踪 */
 #define TRACKING_QUAD_DEFAULT_SECTION   20     /* 四边形每条边默认分段数，越大循迹越慢 */
-#define TRACKING_QUAD_START_HOLD        500     /* 锁定黑框后原地等待的控制周期数 */
+#define TRACKING_QUAD_START_HOLD        50     /* 锁定黑框后原地等待的控制周期数 */
 #define TRACKING_QUAD_LOCK_COUNT        5       /* 连续收到有效黑框的帧数，达到后锁定 */
 #define TRACKING_MIN_QUAD_AREA          100     /* 有效四边形最小面积，过滤噪声点 */
 #define TRACKING_QUAD_SHRINK_SCALE      0.99f   /* 参考工程 SC1，黑框目标点向中心收缩 */
@@ -549,6 +549,11 @@ void Tracking_EnableQuadrilateral(uint8_t Enable)
 	else
 	{
 		Tracking_QuadEnableFlag = 0;
+		/* 关闭四边形模式时清掉完成和锁定状态，避免下次切换模式后被旧完成标志拉回 idle */
+		Tracking_QuadLocked = 0;
+		Tracking_QuadLockCount = 0;
+		Tracking_QuadFinished = 0;
+		Tracking_ResetQuadProgress(0);
 	}
 
 	Tracking_StopAndReset();

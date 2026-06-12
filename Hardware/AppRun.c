@@ -17,7 +17,7 @@ typedef enum
 } App_ModeTypeDef;
 
 /* 默认模式只改这里，注意不要设置为 APP_MODE_NUM */
-#define APP_DEFAULT_MODE    APP_MODE_RECT_NORMAL
+#define APP_DEFAULT_MODE    APP_MODE_RECT_ANY	
 
 static App_ModeTypeDef App_Mode = APP_DEFAULT_MODE;
 

@@ -7,13 +7,23 @@ void Key_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-	/* PA0、PA2、PA4、PA6 配置为上拉输入，按键另一端接 GND，按下为低电平 */
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	/* 按键引脚配置为上拉输入，按键另一端接 GND，按下为低电平 */
+	RCC_APB2PeriphClockCmd(KEY1_GPIO_RCC | KEY2_GPIO_RCC | KEY3_GPIO_RCC | KEY4_GPIO_RCC, ENABLE);
 
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_3 | GPIO_Pin_4 | GPIO_Pin_6;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = KEY1_PIN;
+	GPIO_Init(KEY1_GPIO, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = KEY2_PIN;
+	GPIO_Init(KEY2_GPIO, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = KEY3_PIN;
+	GPIO_Init(KEY3_GPIO, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = KEY4_PIN;
+	GPIO_Init(KEY4_GPIO, &GPIO_InitStructure);
 }
 
 uint8_t Key_GetNum(void)
@@ -34,19 +44,19 @@ uint8_t Key_GetNum(void)
 
 static uint8_t Key_GetState(void)
 {
-	if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0)
+	if (GPIO_ReadInputDataBit(KEY1_GPIO, KEY1_PIN) == 0)
 	{
 		return 1;
 	}
-	if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_3) == 0)
+	if (GPIO_ReadInputDataBit(KEY2_GPIO, KEY2_PIN) == 0)
 	{
 		return 2;
 	}
-	if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_4) == 0)
+	if (GPIO_ReadInputDataBit(KEY3_GPIO, KEY3_PIN) == 0)
 	{
 		return 3;
 	}
-	if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6) == 0)
+	if (GPIO_ReadInputDataBit(KEY4_GPIO, KEY4_PIN) == 0)
 	{
 		return 4;
 	}

@@ -3,6 +3,7 @@
 #include "Timer.h"
 #include "Serial.h"
 #include "Key.h"
+#include "LED.h"
 #include "OLED.h"
 #include "Tracking.h"
 #include "AppRun.h"
@@ -14,6 +15,7 @@ int main(void)
     Stepper_Init();
     Serial_Init();
     Key_Init();
+    Laser_Init();
     OLED_Init();
     Timer_Init();
     Tracking_Init();
@@ -24,6 +26,7 @@ int main(void)
     Tracking_EnableCircle(0);
     Tracking_EnableDigit(0);
     Stepper_StopBoth();
+    Laser_OFF();
 
     Main_ShowMode();
 
