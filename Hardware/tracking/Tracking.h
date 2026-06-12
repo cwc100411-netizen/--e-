@@ -40,30 +40,6 @@ void Tracking_EnableQuadrilateral(uint8_t Enable);
 uint8_t Tracking_IsQuadrilateralFinished(void);
 
 /**
-  * 函    数：开启或关闭圆形循迹目标生成
-  * 参    数：Enable 1 表示开启，0 表示关闭
-  * 返 回 值：无
-  */
-void Tracking_EnableCircle(uint8_t Enable);
-
-/**
-  * 函    数：开启或关闭数字顺序击打
-  * 参    数：Enable 1 表示开启，0 表示关闭
-  * 返 回 值：无
-  * 说    明：新增功能，等待 MaixCam 发送 1~5 中心点后按顺序击打
-  */
-void Tracking_EnableDigit(uint8_t Enable);
-
-/**
-  * 函    数：设置圆形循迹参数
-  * 参    数：CenterX, CenterY 圆心坐标
-  * 参    数：StartX, StartY 圆上的起始点坐标
-  * 返 回 值：无
-  * 说    明：支持任意圆上一点作为起点，例如圆心(133,130)、起点(131,56)
-  */
-void Tracking_SetCircle(int16_t CenterX, int16_t CenterY, int16_t StartX, int16_t StartY);
-
-/**
   * 函    数：设置四边形每条边的分段数
   * 参    数：Section 每条边分成多少小段，数值越大循迹越慢
   * 返 回 值：无
@@ -96,6 +72,22 @@ void Tracking_SetQuadrilateral(int16_t X1, int16_t Y1,
   * 返 回 值：无
   */
 void Tracking_SetTarget(int16_t TargetX, int16_t TargetY);
+
+/**
+  * 函    数：只更新当前追踪目标坐标
+  * 参    数：TargetX 目标 x 坐标
+  * 参    数：TargetY 目标 y 坐标
+  * 返 回 值：无
+  * 说    明：不停止电机、不复位 PID，适合圆形等连续目标生成模块调用
+  */
+void Tracking_UpdateTarget(int16_t TargetX, int16_t TargetY);
+
+/**
+  * 函    数：判断激光点是否已经到达当前目标
+  * 参    数：无
+  * 返 回 值：1 表示到达，0 表示未到达或当前没有有效激光点
+  */
+uint8_t Tracking_IsTargetReachedNow(void);
 
 /**
   * 函    数：获取最近一次有效激光点坐标

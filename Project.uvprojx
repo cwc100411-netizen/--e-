@@ -718,6 +718,36 @@
               <FilePath>.\Hardware\AppRun.h</FilePath>
             </File>
             <File>
+              <FileName>APP_MODE_EDGE_FAST.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\APP_MODE_EDGE_FAST.c</FilePath>
+            </File>
+            <File>
+              <FileName>APP_MODE_EDGE_FAST.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\APP_MODE_EDGE_FAST.h</FilePath>
+            </File>
+            <File>
+              <FileName>APP_MODE_CIRCLE.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\APP_MODE_CIRCLE.c</FilePath>
+            </File>
+            <File>
+              <FileName>APP_MODE_CIRCLE.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\APP_MODE_CIRCLE.h</FilePath>
+            </File>
+            <File>
+              <FileName>APP_MODE_DIGIT.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\APP_MODE_DIGIT.c</FilePath>
+            </File>
+            <File>
+              <FileName>APP_MODE_DIGIT.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\APP_MODE_DIGIT.h</FilePath>
+            </File>
+            <File>
               <FileName>LED.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Hardware\LED.c</FilePath>

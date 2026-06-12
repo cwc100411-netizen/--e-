@@ -183,6 +183,26 @@ void Serial_SendRxPacket(void)
 }
 
 /**
+  * 函    数：查看串口接收标志，但不清除
+  * 参    数：无
+  * 返 回 值：1 表示有新包，0 表示没有新包
+  */
+uint8_t Serial_PeekRxFlag(void)
+{
+	return Serial_RxFlag;
+}
+
+/**
+  * 函    数：手动清除串口接收标志
+  * 参    数：无
+  * 返 回 值：无
+  */
+void Serial_ClearRxFlag(void)
+{
+	Serial_RxFlag = 0;
+}
+
+/**
   * 函    数：获取串口接收数据包标志位
   * 参    数：无
   * 返 回 值：串口接收数据包标志位，范围：0~1，接收到数据包后，标志位置1，读取后标志位自动清零

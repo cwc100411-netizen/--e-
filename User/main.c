@@ -23,8 +23,6 @@ int main(void)
     /* 上电先停止，避免电机误动作 */
     Tracking_Enable(0);
     Tracking_EnableQuadrilateral(0);
-    Tracking_EnableCircle(0);
-    Tracking_EnableDigit(0);
     Stepper_StopBoth();
     Laser_OFF();
 

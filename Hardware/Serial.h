@@ -24,6 +24,8 @@ void Serial_Printf(char *format, ...);
 
 void Serial_SendPacket(void);
 void Serial_SendRxPacket(void);
+uint8_t Serial_PeekRxFlag(void);
+void Serial_ClearRxFlag(void);
 uint8_t Serial_GetRxFlag(void);
 
 #endif

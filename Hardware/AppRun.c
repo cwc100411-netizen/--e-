@@ -4,6 +4,9 @@
 #include "Timer.h"
 #include "Delay.h"
 #include "Tracking.h"
+#include "APP_MODE_EDGE_FAST.h"
+#include "APP_MODE_CIRCLE.h"
+#include "APP_MODE_DIGIT.h"
 
 typedef enum
 {
@@ -26,15 +29,18 @@ static void App_PrepareTracking(void);
 static void App_SwitchMode(void);
 static void App_StartCurrentMode(void);
 static void App_StartEdgeFast(void);
+static void App_StartCircle(void);
+static void App_StartDigit(void);
 static void App_StartRectangleTracking(uint16_t Section);
 static void App_ResetToCenter(void);
 
 static void App_StopAll(void)
 {
+    APP_MODE_EDGE_FAST_Stop();
+    APP_MODE_CIRCLE_Stop();
+    APP_MODE_DIGIT_Stop();
     Tracking_Enable(0);
     Tracking_EnableQuadrilateral(0);
-    Tracking_EnableCircle(0);
-    Tracking_EnableDigit(0);
     Stepper_StopBoth();
 }
 
@@ -83,13 +89,11 @@ static void App_StartCurrentMode(void)
             break;
 
         case APP_MODE_CIRCLE:
-            /* 圆轨迹需要后续增加圆形目标点生成，当前先安全停机 */
-            App_StopAll();
+            App_StartCircle();
             break;
 
         case APP_MODE_DIGIT:
-            /* 数字顺序运动需要后续扩展摄像头串口协议，当前先安全停机 */
-            App_StopAll();
+            App_StartDigit();
             break;
 
         default:
@@ -101,12 +105,19 @@ static void App_StartCurrentMode(void)
 static void App_StartEdgeFast(void)
 {
     App_PrepareTracking();
+    APP_MODE_EDGE_FAST_Start();
+}
 
-    /* 屏幕中心正方形边线测试点，后续可按实际标定结果微调 */
-    Tracking_SetQuadrilateralSection(80);
-    Tracking_SetQuadrilateral(60, 60, 180, 60, 180, 180, 60, 180);
-    Tracking_EnableQuadrilateral(1);
-    Tracking_Enable(1);
+static void App_StartCircle(void)
+{
+    App_PrepareTracking();
+    APP_MODE_CIRCLE_Start();
+}
+
+static void App_StartDigit(void)
+{
+    App_PrepareTracking();
+    APP_MODE_DIGIT_Start();
 }
 
 static void App_StartRectangleTracking(uint16_t Section)
@@ -162,9 +173,25 @@ void App_Run(void)
         App_StopAll();
     }
 
-    /* TIM4 每 10ms 置位一次标志，主循环里执行追踪任务 */
+    /* TIM4 每 10ms 置位一次标志，主循环里执行当前模式任务 */
     if (Timer_GetFlag())
     {
+        if ((App_Mode == APP_MODE_EDGE_FAST) && (APP_MODE_EDGE_FAST_IsRunning() != 0))
+        {
+            APP_MODE_EDGE_FAST_Task();
+            return;
+        }
+        if ((App_Mode == APP_MODE_CIRCLE) && (APP_MODE_CIRCLE_IsRunning() != 0))
+        {
+            APP_MODE_CIRCLE_Task();
+            return;
+        }
+        if ((App_Mode == APP_MODE_DIGIT) && (APP_MODE_DIGIT_IsRunning() != 0))
+        {
+            APP_MODE_DIGIT_Task();
+            return;
+        }
+
         Tracking_Task();
         if (((App_Mode == APP_MODE_EDGE_FAST) ||
              (App_Mode == APP_MODE_RECT_NORMAL) ||
