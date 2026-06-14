@@ -94,32 +94,21 @@ uint8_t APP_MODE_DIGIT_IsRunning(void)
 static void Digit_ReadTargetPacket(void)
 {
     uint8_t i;
+    uint8_t Packet[SERIAL_RX_PACKET_LENGTH];
     Digit_PointTypeDef Temp[DIGIT_TARGET_NUM];
 
-    if (Serial_PeekRxFlag() == 0)
+    if (Serial_GetDigitPacket(Packet) == 0)
     {
-        return;
-    }
-
-    if (Serial_RxType != SERIAL_PACKET_TYPE_DIGIT_TARGETS)
-    {
-        return;
-    }
-
-    if (Serial_RxLength < SERIAL_RX_PACKET_LENGTH)
-    {
-        Serial_ClearRxFlag();
         return;
     }
 
     /* FD 包的 10 字节依次表示数字 1、2、3、4、5 的中心点 x/y */
     for (i = 0; i < DIGIT_TARGET_NUM; i++)
     {
-        Temp[i].X = Serial_RxPacket[i * 2];
-        Temp[i].Y = Serial_RxPacket[i * 2 + 1];
+        Temp[i].X = Packet[i * 2];
+        Temp[i].Y = Packet[i * 2 + 1];
         if (Digit_IsPointValid(Temp[i]) == 0)
         {
-            Serial_ClearRxFlag();
             return;
         }
     }
@@ -129,7 +118,6 @@ static void Digit_ReadTargetPacket(void)
         Digit_Target[i] = Temp[i];
     }
     Digit_TargetValid = 1;
-    Serial_ClearRxFlag();
 
     /* 运行中收到新坐标时，只更新当前目标，不重置数字进度 */
     if ((Digit_Running != 0) && (Digit_Finished == 0) && (Digit_Index < DIGIT_TARGET_NUM))

@@ -35,9 +35,9 @@ uint8_t APP_MODE_CIRCLE_IsRunning(void);
 /**
   * 函    数：设置圆形运动参数
   * 参    数：CenterX, CenterY 圆心坐标
-  * 参    数：StartX, StartY 圆上的起始点坐标
+  * 参    数：TopX, TopY 圆心正上方的圆上点坐标，也是画圆起点和终点
   * 返 回 值：无
   */
-void APP_MODE_CIRCLE_SetCircle(int16_t CenterX, int16_t CenterY, int16_t StartX, int16_t StartY);
+void APP_MODE_CIRCLE_SetCircle(int16_t CenterX, int16_t CenterY, int16_t TopX, int16_t TopY);
 
 #endif

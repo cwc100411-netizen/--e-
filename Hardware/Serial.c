@@ -4,10 +4,12 @@
 #include <stdarg.h>
 
 uint8_t Serial_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
-volatile uint8_t Serial_RxPacket[SERIAL_RX_PACKET_LENGTH];	//定义接收数据包数组，格式：激光 x,y + 四边形 4 个顶点 x,y
-volatile uint8_t Serial_RxFlag;			//定义接收数据包标志位
-volatile uint8_t Serial_RxLength;			//接收到的数据长度，2表示只有激光点，10表示激光点+四边形顶点
-volatile uint8_t Serial_RxType;			//新增：接收到的数据包类型，区分激光包和数字目标包
+static volatile uint8_t Serial_RxPacket[SERIAL_RX_PACKET_LENGTH];	//最近一次收到的数据包，仅用于调试回发
+static volatile uint8_t Serial_TrackingPacket[SERIAL_RX_PACKET_LENGTH];	//FF 包缓存：激光点/黑框顶点
+static volatile uint8_t Serial_TrackingLength;		//FF 包长度，2 或 10
+static volatile uint8_t Serial_TrackingFlag;		//FF 包新数据标志
+static volatile uint8_t Serial_DigitPacket[SERIAL_RX_PACKET_LENGTH];		//FD 包缓存：数字 1~5 中心点
+static volatile uint8_t Serial_DigitFlag;			//FD 包新数据标志
 
 /**
   * 函    数：串口初始化
@@ -183,38 +185,66 @@ void Serial_SendRxPacket(void)
 }
 
 /**
-  * 函    数：查看串口接收标志，但不清除
-  * 参    数：无
-  * 返 回 值：1 表示有新包，0 表示没有新包
+  * 函    数：读取最新 FF 循迹数据包
+  * 参    数：Buf 保存数据的数组，长度至少为 SERIAL_RX_PACKET_LENGTH
+  * 参    数：Length 保存实际数据长度，2 表示只有激光点，10 表示激光点+黑框顶点
+  * 返 回 值：1 表示读到新包，0 表示没有新包
   */
-uint8_t Serial_PeekRxFlag(void)
+uint8_t Serial_GetTrackingPacket(uint8_t *Buf, uint8_t *Length)
 {
-	return Serial_RxFlag;
-}
+	uint8_t i;
+	uint8_t Len;
 
-/**
-  * 函    数：手动清除串口接收标志
-  * 参    数：无
-  * 返 回 值：无
-  */
-void Serial_ClearRxFlag(void)
-{
-	Serial_RxFlag = 0;
-}
-
-/**
-  * 函    数：获取串口接收数据包标志位
-  * 参    数：无
-  * 返 回 值：串口接收数据包标志位，范围：0~1，接收到数据包后，标志位置1，读取后标志位自动清零
-  */
-uint8_t Serial_GetRxFlag(void)
-{
-	if (Serial_RxFlag == 1)			//如果标志位为1
+	__disable_irq();
+	if (Serial_TrackingFlag == 0)
 	{
-		Serial_RxFlag = 0;
-		return 1;					//则返回1，并自动清零标志位
+		__enable_irq();
+		return 0;
 	}
-	return 0;						//如果标志位为0，则返回0
+
+	Len = Serial_TrackingLength;
+	if (Length != 0)
+	{
+		*Length = Len;
+	}
+	if (Buf != 0)
+	{
+		for (i = 0; i < Len; i++)
+		{
+			Buf[i] = Serial_TrackingPacket[i];
+		}
+	}
+	Serial_TrackingFlag = 0;
+	__enable_irq();
+	return 1;
+}
+
+/**
+  * 函    数：读取最新 FD 数字目标数据包
+  * 参    数：Buf 保存 10 字节数字目标坐标，长度至少为 SERIAL_RX_PACKET_LENGTH
+  * 返 回 值：1 表示读到新包，0 表示没有新包
+  */
+uint8_t Serial_GetDigitPacket(uint8_t *Buf)
+{
+	uint8_t i;
+
+	__disable_irq();
+	if (Serial_DigitFlag == 0)
+	{
+		__enable_irq();
+		return 0;
+	}
+
+	if (Buf != 0)
+	{
+		for (i = 0; i < SERIAL_RX_PACKET_LENGTH; i++)
+		{
+			Buf[i] = Serial_DigitPacket[i];
+		}
+	}
+	Serial_DigitFlag = 0;
+	__enable_irq();
+	return 1;
 }
 
 /**
@@ -230,6 +260,7 @@ void USART1_IRQHandler(void)
 	static uint8_t RxState = 0;
 	static uint8_t pRxPacket = 0;
 	static uint8_t RxType = SERIAL_PACKET_TYPE_NONE;
+	uint8_t i;
 	if (USART_GetITStatus(USART1, USART_IT_RXNE) == SET)
 	{
 		uint8_t RxData = USART_ReceiveData(USART1);
@@ -262,9 +293,23 @@ void USART1_IRQHandler(void)
 				    ((RxType == SERIAL_PACKET_TYPE_DIGIT_TARGETS) &&
 				     (pRxPacket == SERIAL_RX_PACKET_LENGTH)))
 				{
-					Serial_RxLength = pRxPacket;
-					Serial_RxType = RxType;
-					Serial_RxFlag = 1;
+					if (RxType == SERIAL_PACKET_TYPE_TRACKING)
+					{
+						for (i = 0; i < pRxPacket; i++)
+						{
+							Serial_TrackingPacket[i] = Serial_RxPacket[i];
+						}
+						Serial_TrackingLength = pRxPacket;
+						Serial_TrackingFlag = 1;
+					}
+					else if (RxType == SERIAL_PACKET_TYPE_DIGIT_TARGETS)
+					{
+						for (i = 0; i < SERIAL_RX_PACKET_LENGTH; i++)
+						{
+							Serial_DigitPacket[i] = Serial_RxPacket[i];
+						}
+						Serial_DigitFlag = 1;
+					}
 				}
 				RxState = 0;
 				pRxPacket = 0;

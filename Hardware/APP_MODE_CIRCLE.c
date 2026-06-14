@@ -4,226 +4,73 @@
 
 #define CIRCLE_IMAGE_SIZE             240
 #define CIRCLE_IMAGE_MAX              (CIRCLE_IMAGE_SIZE - 1)
-#define CIRCLE_POINT_NUM              180     /* 圆形一圈 180 个插值点，每个点相差 2 度 */
-#define CIRCLE_CENTER_X               133     /* 默认圆心 x 坐标 */
-#define CIRCLE_CENTER_Y               130     /* 默认圆心 y 坐标 */
-#define CIRCLE_START_X                131     /* 默认圆形起点 x 坐标 */
-#define CIRCLE_START_Y                56      /* 默认圆形起点 y 坐标 */
-#define CIRCLE_ADVANCE_TICKS          2       /* 目标每 2 个 10ms 周期前进一次，约 20ms */
+#define CIRCLE_POINT_NUM              120      /* 一圈目标点数量：60/90/120/180/360 可选 */
+#define CIRCLE_HOLD_TICKS             100     /* AppRun 每 10ms 调用一次，100 次约 1 秒 */
+#define CIRCLE_CENTER_X               129     /* 默认圆心 x 坐标 */
+#define CIRCLE_CENTER_Y               120     /* 默认圆心 y 坐标 */
+#define CIRCLE_TOP_X                  129     /* 默认圆心正上方圆上点 x 坐标 */
+#define CIRCLE_TOP_Y                  55      /* 默认圆心正上方圆上点 y 坐标 */
 
-/* 单位圆查表，数值放大 1000 倍。第 0 个点对应圆最上方，之后顺时针前进。 */
-static const int16_t Circle_Table[CIRCLE_POINT_NUM][2] =
-{
-    {    0, -1000},
-    {   35,  -999},
-    {   70,  -998},
-    {  105,  -995},
-    {  139,  -990},
-    {  174,  -985},
-    {  208,  -978},
-    {  242,  -970},
-    {  276,  -961},
-    {  309,  -951},
-    {  342,  -940},
-    {  375,  -927},
-    {  407,  -914},
-    {  438,  -899},
-    {  469,  -883},
-    {  500,  -866},
-    {  530,  -848},
-    {  559,  -829},
-    {  588,  -809},
-    {  616,  -788},
-    {  643,  -766},
-    {  669,  -743},
-    {  695,  -719},
-    {  719,  -695},
-    {  743,  -669},
-    {  766,  -643},
-    {  788,  -616},
-    {  809,  -588},
-    {  829,  -559},
-    {  848,  -530},
-    {  866,  -500},
-    {  883,  -469},
-    {  899,  -438},
-    {  914,  -407},
-    {  927,  -375},
-    {  940,  -342},
-    {  951,  -309},
-    {  961,  -276},
-    {  970,  -242},
-    {  978,  -208},
-    {  985,  -174},
-    {  990,  -139},
-    {  995,  -105},
-    {  998,   -70},
-    {  999,   -35},
-    { 1000,     0},
-    {  999,    35},
-    {  998,    70},
-    {  995,   105},
-    {  990,   139},
-    {  985,   174},
-    {  978,   208},
-    {  970,   242},
-    {  961,   276},
-    {  951,   309},
-    {  940,   342},
-    {  927,   375},
-    {  914,   407},
-    {  899,   438},
-    {  883,   469},
-    {  866,   500},
-    {  848,   530},
-    {  829,   559},
-    {  809,   588},
-    {  788,   616},
-    {  766,   643},
-    {  743,   669},
-    {  719,   695},
-    {  695,   719},
-    {  669,   743},
-    {  643,   766},
-    {  616,   788},
-    {  588,   809},
-    {  559,   829},
-    {  530,   848},
-    {  500,   866},
-    {  469,   883},
-    {  438,   899},
-    {  407,   914},
-    {  375,   927},
-    {  342,   940},
-    {  309,   951},
-    {  276,   961},
-    {  242,   970},
-    {  208,   978},
-    {  174,   985},
-    {  139,   990},
-    {  105,   995},
-    {   70,   998},
-    {   35,   999},
-    {    0,  1000},
-    {  -35,   999},
-    {  -70,   998},
-    { -105,   995},
-    { -139,   990},
-    { -174,   985},
-    { -208,   978},
-    { -242,   970},
-    { -276,   961},
-    { -309,   951},
-    { -342,   940},
-    { -375,   927},
-    { -407,   914},
-    { -438,   899},
-    { -469,   883},
-    { -500,   866},
-    { -530,   848},
-    { -559,   829},
-    { -588,   809},
-    { -616,   788},
-    { -643,   766},
-    { -669,   743},
-    { -695,   719},
-    { -719,   695},
-    { -743,   669},
-    { -766,   643},
-    { -788,   616},
-    { -809,   588},
-    { -829,   559},
-    { -848,   530},
-    { -866,   500},
-    { -883,   469},
-    { -899,   438},
-    { -914,   407},
-    { -927,   375},
-    { -940,   342},
-    { -951,   309},
-    { -961,   276},
-    { -970,   242},
-    { -978,   208},
-    { -985,   174},
-    { -990,   139},
-    { -995,   105},
-    { -998,    70},
-    { -999,    35},
-    {-1000,     0},
-    { -999,   -35},
-    { -998,   -70},
-    { -995,  -105},
-    { -990,  -139},
-    { -985,  -174},
-    { -978,  -208},
-    { -970,  -242},
-    { -961,  -276},
-    { -951,  -309},
-    { -940,  -342},
-    { -927,  -375},
-    { -914,  -407},
-    { -899,  -438},
-    { -883,  -469},
-    { -866,  -500},
-    { -848,  -530},
-    { -829,  -559},
-    { -809,  -588},
-    { -788,  -616},
-    { -766,  -643},
-    { -743,  -669},
-    { -719,  -695},
-    { -695,  -719},
-    { -669,  -743},
-    { -643,  -766},
-    { -616,  -788},
-    { -588,  -809},
-    { -559,  -829},
-    { -530,  -848},
-    { -500,  -866},
-    { -469,  -883},
-    { -438,  -899},
-    { -407,  -914},
-    { -375,  -927},
-    { -342,  -940},
-    { -309,  -951},
-    { -276,  -961},
-    { -242,  -970},
-    { -208,  -978},
-    { -174,  -985},
-    { -139,  -990},
-    { -105,  -995},
-    {  -70,  -998},
-    {  -35,  -999},
-};
+/* 使用固定点旋转生成圆上点，避免浮点三角函数和大表。 */
+#define CIRCLE_OFFSET_SCALE           256
+#define CIRCLE_ROTATE_SCALE           8192
+
+/* 根据一圈目标点数量选择每一步的旋转角度，保证 PointNum 个点刚好走完 360 度。 */
+#if (CIRCLE_POINT_NUM == 60)
+#define CIRCLE_COS_STEP               8147    /* cos(6 度) * 8192 */
+#define CIRCLE_SIN_STEP               856     /* sin(6 度) * 8192 */
+#elif (CIRCLE_POINT_NUM == 90)
+#define CIRCLE_COS_STEP               8172    /* cos(4 度) * 8192 */
+#define CIRCLE_SIN_STEP               571     /* sin(4 度) * 8192 */
+#elif (CIRCLE_POINT_NUM == 120)
+#define CIRCLE_COS_STEP               8181    /* cos(3 度) * 8192 */
+#define CIRCLE_SIN_STEP               429     /* sin(3 度) * 8192 */
+#elif (CIRCLE_POINT_NUM == 180)
+#define CIRCLE_COS_STEP               8187    /* cos(2 度) * 8192 */
+#define CIRCLE_SIN_STEP               286     /* sin(2 度) * 8192 */
+#elif (CIRCLE_POINT_NUM == 360)
+#define CIRCLE_COS_STEP               8191    /* cos(1 度) * 8192 */
+#define CIRCLE_SIN_STEP               143     /* sin(1 度) * 8192 */
+#else
+#error CIRCLE_POINT_NUM only supports 60, 90, 120, 180, or 360
+#endif
 
 static uint8_t Circle_Running = 0;
-static uint16_t Circle_Index = 0;
-static uint16_t Circle_Tick = 0;
+static uint8_t Circle_StartReached = 0;
+static uint8_t Circle_Drawing = 0;
+static uint16_t Circle_HoldTick = 0;
+static uint16_t Circle_PointIndex = 0;
+
 static uint8_t Circle_CenterX = CIRCLE_CENTER_X;
 static uint8_t Circle_CenterY = CIRCLE_CENTER_Y;
-static int16_t Circle_StartOffsetX = CIRCLE_START_X - CIRCLE_CENTER_X;
-static int16_t Circle_StartOffsetY = CIRCLE_START_Y - CIRCLE_CENTER_Y;
+static int16_t Circle_StartOffsetX = CIRCLE_TOP_X - CIRCLE_CENTER_X;
+static int16_t Circle_StartOffsetY = CIRCLE_TOP_Y - CIRCLE_CENTER_Y;
+static int32_t Circle_OffsetX = (CIRCLE_TOP_X - CIRCLE_CENTER_X) * CIRCLE_OFFSET_SCALE;
+static int32_t Circle_OffsetY = (CIRCLE_TOP_Y - CIRCLE_CENTER_Y) * CIRCLE_OFFSET_SCALE;
 
-static void Circle_UpdateTarget(void);
-static void Circle_MoveTarget(void);
+static void Circle_ResetRun(void);
+static void Circle_LoadStartOffset(void);
+static void Circle_SetTargetByOffset(void);
+static void Circle_MoveToNextPoint(void);
+static void Circle_StopAtEnd(void);
+static int32_t Circle_DivRound(int32_t Value, int32_t Divisor);
 static uint8_t Circle_ClampPixel(int16_t Value);
 
 void APP_MODE_CIRCLE_Start(void)
 {
+    Circle_ResetRun();
     Circle_Running = 1;
-    Circle_Index = 0;
-    Circle_Tick = 0;
 
-    Circle_UpdateTarget();
+    /* 第一步先让激光移动到圆心正上方的圆上点。 */
+    Circle_LoadStartOffset();
+    Circle_SetTargetByOffset();
     Tracking_Enable(1);
 }
 
 void APP_MODE_CIRCLE_Stop(void)
 {
     Circle_Running = 0;
-    Circle_Index = 0;
-    Circle_Tick = 0;
-
+    Circle_ResetRun();
     Tracking_Enable(0);
     Stepper_StopBoth();
 }
@@ -235,14 +82,51 @@ void APP_MODE_CIRCLE_Task(void)
         return;
     }
 
-    Circle_UpdateTarget();
-    Tracking_Task();
-
-    Circle_Tick++;
-    if (Circle_Tick >= CIRCLE_ADVANCE_TICKS)
+    if (Circle_StartReached == 0)
     {
-        Circle_MoveTarget();
+        Tracking_Task();
+        if (Tracking_IsTargetReachedNow() != 0)
+        {
+            /* 到达起点后先停机，之后只用计数等待，不用阻塞延时。 */
+            Circle_StartReached = 1;
+            Circle_HoldTick = 0;
+            Tracking_Enable(0);
+            Stepper_StopBoth();
+        }
+        return;
     }
+
+    if (Circle_Drawing == 0)
+    {
+        if (Circle_HoldTick < CIRCLE_HOLD_TICKS)
+        {
+            Circle_HoldTick++;
+            Stepper_StopBoth();
+            return;
+        }
+
+        /* 起点已经到达并等待完成，从第 1 个圆周点开始画。 */
+        Circle_Drawing = 1;
+        Circle_PointIndex = 0;
+        Circle_LoadStartOffset();
+        Circle_MoveToNextPoint();
+        Tracking_Enable(1);
+        return;
+    }
+
+    Tracking_Task();
+    if (Tracking_IsTargetReachedNow() == 0)
+    {
+        return;
+    }
+
+    if (Circle_PointIndex >= CIRCLE_POINT_NUM)
+    {
+        Circle_StopAtEnd();
+        return;
+    }
+
+    Circle_MoveToNextPoint();
 }
 
 uint8_t APP_MODE_CIRCLE_IsRunning(void)
@@ -250,82 +134,89 @@ uint8_t APP_MODE_CIRCLE_IsRunning(void)
     return Circle_Running;
 }
 
-void APP_MODE_CIRCLE_SetCircle(int16_t CenterX, int16_t CenterY, int16_t StartX, int16_t StartY)
+void APP_MODE_CIRCLE_SetCircle(int16_t CenterX, int16_t CenterY, int16_t TopX, int16_t TopY)
 {
-    int16_t OffsetX;
-    int16_t OffsetY;
-
     Circle_CenterX = Circle_ClampPixel(CenterX);
     Circle_CenterY = Circle_ClampPixel(CenterY);
+    TopX = Circle_ClampPixel(TopX);
+    TopY = Circle_ClampPixel(TopY);
 
-    /* 用“圆心 + 圆上一点”确定圆，首个目标点就是传入的 StartX、StartY。 */
-    OffsetX = (int16_t)Circle_ClampPixel(StartX) - (int16_t)Circle_CenterX;
-    OffsetY = (int16_t)Circle_ClampPixel(StartY) - (int16_t)Circle_CenterY;
-    if ((OffsetX == 0) && (OffsetY == 0))
+    Circle_StartOffsetX = TopX - (int16_t)Circle_CenterX;
+    Circle_StartOffsetY = TopY - (int16_t)Circle_CenterY;
+    if ((Circle_StartOffsetX == 0) && (Circle_StartOffsetY == 0))
     {
-        OffsetY = -1;
+        Circle_StartOffsetY = -1;
     }
 
-    Circle_StartOffsetX = OffsetX;
-    Circle_StartOffsetY = OffsetY;
-    Circle_Index = 0;
-    Circle_Tick = 0;
-    Circle_UpdateTarget();
+    Circle_ResetRun();
+    Circle_LoadStartOffset();
+    Circle_SetTargetByOffset();
 }
 
-static void Circle_UpdateTarget(void)
+static void Circle_ResetRun(void)
 {
-    int32_t OffsetX;
-    int32_t OffsetY;
-    int32_t TargetX;
-    int32_t TargetY;
-    int32_t SinValue;
-    int32_t NegCosValue;
-
-    if (Circle_Index >= CIRCLE_POINT_NUM)
-    {
-        Circle_Index = 0;
-    }
-
-    /* 查表值放大了 1000 倍；把起点相对圆心的偏移按顺时针方向旋转。 */
-    SinValue = Circle_Table[Circle_Index][0];
-    NegCosValue = Circle_Table[Circle_Index][1];
-    OffsetX = -((int32_t)Circle_StartOffsetX * NegCosValue)
-            - ((int32_t)Circle_StartOffsetY * SinValue);
-    OffsetY =  ((int32_t)Circle_StartOffsetX * SinValue)
-            - ((int32_t)Circle_StartOffsetY * NegCosValue);
-
-    if (OffsetX >= 0)
-    {
-        OffsetX = (OffsetX + 500) / 1000;
-    }
-    else
-    {
-        OffsetX = (OffsetX - 500) / 1000;
-    }
-
-    if (OffsetY >= 0)
-    {
-        OffsetY = (OffsetY + 500) / 1000;
-    }
-    else
-    {
-        OffsetY = (OffsetY - 500) / 1000;
-    }
-
-    TargetX = (int32_t)Circle_CenterX + OffsetX;
-    TargetY = (int32_t)Circle_CenterY + OffsetY;
-    Tracking_UpdateTarget((int16_t)TargetX, (int16_t)TargetY);
+    Circle_StartReached = 0;
+    Circle_Drawing = 0;
+    Circle_HoldTick = 0;
+    Circle_PointIndex = 0;
 }
 
-static void Circle_MoveTarget(void)
+static void Circle_LoadStartOffset(void)
 {
-    Circle_Tick = 0;
-    Circle_Index++;
-    if (Circle_Index >= CIRCLE_POINT_NUM)
+    Circle_OffsetX = (int32_t)Circle_StartOffsetX * CIRCLE_OFFSET_SCALE;
+    Circle_OffsetY = (int32_t)Circle_StartOffsetY * CIRCLE_OFFSET_SCALE;
+}
+
+static void Circle_SetTargetByOffset(void)
+{
+    int16_t TargetX;
+    int16_t TargetY;
+
+    TargetX = (int16_t)Circle_CenterX
+            + (int16_t)Circle_DivRound(Circle_OffsetX, CIRCLE_OFFSET_SCALE);
+    TargetY = (int16_t)Circle_CenterY
+            + (int16_t)Circle_DivRound(Circle_OffsetY, CIRCLE_OFFSET_SCALE);
+    Tracking_UpdateTarget(Circle_ClampPixel(TargetX), Circle_ClampPixel(TargetY));
+}
+
+static void Circle_MoveToNextPoint(void)
+{
+    int32_t NewOffsetX;
+    int32_t NewOffsetY;
+
+    Circle_PointIndex++;
+    if (Circle_PointIndex >= CIRCLE_POINT_NUM)
     {
-        Circle_Index = 0;
+        /* 最后一个目标点强制回到起点，避免连续旋转带来的微小累计误差。 */
+        Circle_LoadStartOffset();
+        Circle_SetTargetByOffset();
+        return;
     }
+
+    NewOffsetX = Circle_OffsetX * CIRCLE_COS_STEP
+               - Circle_OffsetY * CIRCLE_SIN_STEP;
+    NewOffsetY = Circle_OffsetX * CIRCLE_SIN_STEP
+               + Circle_OffsetY * CIRCLE_COS_STEP;
+    Circle_OffsetX = Circle_DivRound(NewOffsetX, CIRCLE_ROTATE_SCALE);
+    Circle_OffsetY = Circle_DivRound(NewOffsetY, CIRCLE_ROTATE_SCALE);
+    Circle_SetTargetByOffset();
+}
+
+static void Circle_StopAtEnd(void)
+{
+    Circle_Running = 0;
+    Circle_Drawing = 0;
+    Tracking_Enable(0);
+    Stepper_StopBoth();
+}
+
+static int32_t Circle_DivRound(int32_t Value, int32_t Divisor)
+{
+    if (Value >= 0)
+    {
+        return (Value + Divisor / 2) / Divisor;
+    }
+    return (Value - Divisor / 2) / Divisor;
 }
 
 static uint8_t Circle_ClampPixel(int16_t Value)
