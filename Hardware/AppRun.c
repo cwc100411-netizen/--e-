@@ -20,7 +20,7 @@ typedef enum
 } App_ModeTypeDef;
 
 /* 默认模式只改这里，注意不要设置为 APP_MODE_NUM */
-#define APP_DEFAULT_MODE    APP_MODE_RECT_ANY	
+#define APP_DEFAULT_MODE    APP_MODE_IDLE	
 
 static App_ModeTypeDef App_Mode = APP_DEFAULT_MODE;
 
@@ -85,7 +85,7 @@ static void App_StartCurrentMode(void)
             break;
 
         case APP_MODE_RECT_ANY:
-            App_StartRectangleTracking(20);
+            App_StartRectangleTracking(40);
             break;
 
         case APP_MODE_CIRCLE:

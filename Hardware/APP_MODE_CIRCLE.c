@@ -4,12 +4,12 @@
 
 #define CIRCLE_IMAGE_SIZE             240
 #define CIRCLE_IMAGE_MAX              (CIRCLE_IMAGE_SIZE - 1)
-#define CIRCLE_POINT_NUM              120      /* 一圈目标点数量：60/90/120/180/360 可选 */
+#define CIRCLE_POINT_NUM              360      /* 一圈目标点数量：60/90/120/180/360 可选 */
 #define CIRCLE_HOLD_TICKS             100     /* AppRun 每 10ms 调用一次，100 次约 1 秒 */
 #define CIRCLE_CENTER_X               129     /* 默认圆心 x 坐标 */
-#define CIRCLE_CENTER_Y               120     /* 默认圆心 y 坐标 */
+#define CIRCLE_CENTER_Y               123     /* 默认圆心 y 坐标 */
 #define CIRCLE_TOP_X                  129     /* 默认圆心正上方圆上点 x 坐标 */
-#define CIRCLE_TOP_Y                  55      /* 默认圆心正上方圆上点 y 坐标 */
+#define CIRCLE_TOP_Y                  59      /* 默认圆心正上方圆上点 y 坐标 */
 
 /* 使用固定点旋转生成圆上点，避免浮点三角函数和大表。 */
 #define CIRCLE_OFFSET_SCALE           256

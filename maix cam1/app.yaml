@@ -1,0 +1,14 @@
+id: a123
+name: diansaie
+version: 1.0.0
+author: cwc
+icon: app.png
+desc: 无
+files:
+  - digit_detector.py
+  - main.py
+  - reference_digit_1.jpg
+  - reference_digit_2.jpg
+  - reference_digit_3.jpg
+  - reference_digit_4.jpg
+  - reference_digit_5.jpg

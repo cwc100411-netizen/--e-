@@ -6,9 +6,9 @@
 /* 常用调试参数：后续调循迹速度和稳定性时优先改这里 */
 #define TRACKING_IMAGE_SIZE             240     /* 摄像头图像宽高，当前为 240x240 */
 #define TRACKING_CENTER                 120     /* 默认目标中心坐标 */
-#define TRACKING_DEAD_ZONE_PIXEL        2       /* 像素误差死区，x 和 y 都 <=2 时认为到达目标点 */
-#define TRACKING_MIN_SPEED              40      /* 电机最小启动速度，单位 step/s */
-#define TRACKING_MAX_SPEED              700     /* 电机最大速度限制，单位 step/s */
+#define TRACKING_DEAD_ZONE_PIXEL        1       /* 像素误差死区，x 和 y 都 <=2 时认为到达目标点 */
+#define TRACKING_MIN_SPEED              35      /* 电机最小启动速度，单位 step/s */
+#define TRACKING_MAX_SPEED              500     /* 电机最大速度限制，单位 step/s */
 #define TRACKING_LOST_LIMIT             20      /* 连续丢包次数上限，超过后停止追踪 */
 #define TRACKING_QUAD_DEFAULT_SECTION   20     /* 四边形每条边默认分段数，越大循迹越慢 */
 #define TRACKING_QUAD_START_HOLD        50     /* 锁定黑框后原地等待的控制周期数 */
@@ -21,7 +21,7 @@
 /* PID 参数：先只用 P，抖动明显时再小幅加 D */
 #define TRACKING_PID_KP                 2.0f    /* 比例系数，越大响应越快，也更容易抖 */
 #define TRACKING_PID_KI                 0.0f    /* 积分系数，当前不使用 */
-#define TRACKING_PID_KD                 0.6f    /* 微分系数，抖动时可小幅增加 */
+#define TRACKING_PID_KD                 0.15f    /* 微分系数，抖动时可小幅增加 */
 
 /* 如果实际电机方向相反，把对应值改为 -1 */
 #define TRACKING_MOTOR_X_DIR_SIGN       1       /* 水平轴方向修正，反向时改为 -1 */
